@@ -1,4 +1,4 @@
-import { forwardRef, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { Dialog as RadixDialog, Tooltip as RadixTooltip } from 'radix-ui';
 import { useApp } from '../../state/appStore';
@@ -259,6 +259,9 @@ export function Modal({
 export function ConfirmDialog() {
   const confirm = useApp((state) => state.confirm);
   const close = useApp((state) => state.closeConfirm);
+  const [acknowledged, setAcknowledged] = useState(false);
+  // Every question gets its own answer: a tick from the last one does not carry over.
+  useEffect(() => setAcknowledged(false), [confirm]);
   return (
     <Modal
       open={confirm !== null}
@@ -267,12 +270,18 @@ export function ConfirmDialog() {
       }}
       title={confirm?.title ?? ''}
       description={confirm?.message}
-      width={400}
+      width={confirm?.acknowledge ? 520 : 400}
     >
+      {confirm?.acknowledge && (
+        <div className="px-5 pb-3">
+          <Checkbox label={confirm.acknowledge} checked={acknowledged} onChange={setAcknowledged} />
+        </div>
+      )}
       <div className="flex justify-end gap-2 px-5 pb-4">
         <Button onClick={close}>Abbrechen</Button>
         <Button
           variant={confirm?.danger ? 'danger' : 'primary'}
+          disabled={Boolean(confirm?.acknowledge) && !acknowledged}
           onClick={() => {
             confirm?.onConfirm();
             close();

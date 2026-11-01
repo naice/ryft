@@ -1,12 +1,22 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Braces, History, Pencil, Play, Plus, Search, Star, Trash2 } from 'lucide-react';
-import type { Snippet, SnippetInput, SnippetShell } from '@shared/contracts';
+import { Braces, Copy, History, Library, Lock, Pencil, Play, Plus, Search, Star, Trash2 } from 'lucide-react';
+import type { Snippet, SnippetInput, SnippetParam, SnippetParamType, SnippetPlatform, SnippetShell } from '@shared/contracts';
 import { fuzzyScore } from '@shared/features/commandHistory';
-import { placeholdersOf, snippetInputSchema, SNIPPET_SHELLS } from '@shared/features/snippets';
+import { platformLabel } from '@shared/features/snippetCompat';
+import {
+  placeholdersOf,
+  snippetInputSchema,
+  SNIPPET_PARAM_TYPES,
+  SNIPPET_PLATFORMS,
+  SNIPPET_SHELLS,
+  validateParamValue
+} from '@shared/features/snippets';
 import { attempt, useApp } from '../../state/appStore';
 import { Button, Checkbox, cx, EmptyState, Field, IconButton, Input, Modal, Select, TEXTAREA } from '../../components/ui/primitives';
 import { ToolView } from '../../components/ui/ToolView';
 import { HistoryTab } from './HistoryTab';
+import { PARAM_TYPE_LABEL, PresetBrowser } from './PresetBrowser';
+import { RiskBadge } from './snippetBadges';
 import { useSnippets } from './snippetStore';
 
 const SHELL_LABEL: Record<SnippetShell, string> = { posix: 'POSIX (bash, zsh, sh)', powershell: 'PowerShell', cmd: 'Eingabeaufforderung' };
@@ -14,7 +24,14 @@ const SHELL_LABEL: Record<SnippetShell, string> = { posix: 'POSIX (bash, zsh, sh
 interface ParamDraft {
   defaultValue: string;
   description: string;
+  type: SnippetParamType | '';
+  required: boolean;
+  options: string;
 }
+
+const EMPTY_DRAFT: ParamDraft = { defaultValue: '', description: '', type: '', required: true, options: '' };
+
+const listOf = (text: string) => [...new Set(text.split(',').map((item) => item.trim()).filter(Boolean))];
 
 function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(): void }) {
   const save = useSnippets((state) => state.save);
@@ -24,14 +41,27 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
   const [category, setCategory] = useState(snippet?.category ?? '');
   const [tags, setTags] = useState(snippet?.tags.join(', ') ?? '');
   const [shells, setShells] = useState<SnippetShell[]>(snippet?.shells ?? []);
+  const [platforms, setPlatforms] = useState<SnippetPlatform[]>(snippet?.platforms ?? []);
+  const [requiredTools, setRequiredTools] = useState(snippet?.requiredTools.join(', ') ?? '');
   const [favorite, setFavorite] = useState(snippet?.favorite ?? false);
   const [params, setParams] = useState<Record<string, ParamDraft>>(() =>
     Object.fromEntries(
-      (snippet?.params ?? []).map((param) => [param.name, { defaultValue: param.defaultValue ?? '', description: param.description }])
+      (snippet?.params ?? []).map((param) => [
+        param.name,
+        {
+          defaultValue: param.defaultValue ?? '',
+          description: param.description,
+          type: param.type ?? '',
+          required: param.required !== false,
+          options: param.options?.join(', ') ?? ''
+        }
+      ])
     )
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
   const placeholders = useMemo(() => placeholdersOf(command), [command]);
+  const setParam = (param: string, change: Partial<ParamDraft>) =>
+    setParams((current) => ({ ...current, [param]: { ...EMPTY_DRAFT, ...current[param], ...change } }));
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -40,14 +70,26 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
       description,
       command,
       category,
-      tags: [...new Set(tags.split(',').map((tag) => tag.trim()).filter(Boolean))],
+      tags: listOf(tags),
       shells,
+      platforms,
+      requiredTools: listOf(requiredTools),
       favorite,
-      params: placeholders.map(({ name: param, inlineDefault }) => ({
-        name: param,
-        defaultValue: params[param]?.defaultValue || inlineDefault || null,
-        description: params[param]?.description ?? ''
-      }))
+      params: placeholders.map(({ name: param, inlineDefault }): SnippetParam => {
+        const draft = params[param];
+        const original = snippet?.params.find((item) => item.name === param);
+        const type = draft?.type || undefined;
+        return {
+          // What this form has no field for, such as the limits of a number, stays as it was.
+          ...original,
+          name: param,
+          defaultValue: draft?.defaultValue || inlineDefault || null,
+          description: draft?.description ?? '',
+          type,
+          required: draft?.required === false ? false : undefined,
+          options: type === 'enum' ? listOf(draft?.options ?? '') : undefined
+        };
+      })
     };
     const parsed = snippetInputSchema.safeParse(candidate);
     if (!parsed.success) {
@@ -63,9 +105,20 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
                 ? 'Standardwerte dürfen keine Steuerzeichen enthalten'
                 : field === 'tags'
                   ? 'Höchstens 16 Tags mit je 32 Zeichen'
-                  : issue.message;
+                  : field === 'requiredTools'
+                    ? 'Höchstens 16 Namen, nur Buchstaben, Ziffern und . _ + -'
+                    : issue.message;
       }
       setErrors(next);
+      return;
+    }
+    const wrongDefaults = Object.fromEntries(
+      parsed.data.params
+        .filter((param) => param.defaultValue && validateParamValue(param, param.defaultValue))
+        .map((param) => [`default-${param.name}`, validateParamValue(param, param.defaultValue as string) as string])
+    );
+    if (Object.keys(wrongDefaults).length > 0) {
+      setErrors(wrongDefaults);
       return;
     }
     void attempt(async () => {
@@ -105,34 +158,55 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
             />
           </Field>
           {placeholders.map(({ name: param, inlineDefault }) => (
-            <div key={param} className="grid grid-cols-[1fr_1.4fr] gap-3">
-              <Field label={`${param}: Standardwert`} htmlFor={`snippet-default-${param}`} error={errors.params}>
-                <Input
-                  id={`snippet-default-${param}`}
-                  spellCheck={false}
-                  placeholder={inlineDefault ?? ''}
-                  value={params[param]?.defaultValue ?? ''}
-                  onChange={(event) =>
-                    setParams((current) => ({
-                      ...current,
-                      [param]: { description: current[param]?.description ?? '', defaultValue: event.target.value }
-                    }))
-                  }
-                />
-              </Field>
-              <Field label={`${param}: Beschreibung`} htmlFor={`snippet-param-description-${param}`}>
-                <Input
-                  id={`snippet-param-description-${param}`}
-                  maxLength={256}
-                  value={params[param]?.description ?? ''}
-                  onChange={(event) =>
-                    setParams((current) => ({
-                      ...current,
-                      [param]: { defaultValue: current[param]?.defaultValue ?? '', description: event.target.value }
-                    }))
-                  }
-                />
-              </Field>
+            <div key={param} className="flex flex-col gap-2 rounded-control border border-border p-2.5">
+              <div className="grid grid-cols-[1fr_1.4fr] gap-3">
+                <Field label={`${param}: Standardwert`} htmlFor={`snippet-default-${param}`} error={errors[`default-${param}`] ?? errors.params}>
+                  <Input
+                    id={`snippet-default-${param}`}
+                    spellCheck={false}
+                    placeholder={inlineDefault ?? ''}
+                    value={params[param]?.defaultValue ?? ''}
+                    onChange={(event) => setParam(param, { defaultValue: event.target.value })}
+                  />
+                </Field>
+                <Field label={`${param}: Beschreibung`} htmlFor={`snippet-param-description-${param}`}>
+                  <Input
+                    id={`snippet-param-description-${param}`}
+                    maxLength={256}
+                    value={params[param]?.description ?? ''}
+                    onChange={(event) => setParam(param, { description: event.target.value })}
+                  />
+                </Field>
+              </div>
+              <div className="grid grid-cols-[1fr_1.4fr] items-end gap-3">
+                <Field label={`${param}: Typ`} htmlFor={`snippet-type-${param}`}>
+                  <Select
+                    id={`snippet-type-${param}`}
+                    value={params[param]?.type ?? ''}
+                    onChange={(value) => setParam(param, { type: value as SnippetParamType | '' })}
+                    options={[
+                      { value: '', label: 'Ohne Prüfung' },
+                      ...SNIPPET_PARAM_TYPES.map((type) => ({ value: type, label: PARAM_TYPE_LABEL[type] }))
+                    ]}
+                  />
+                </Field>
+                {params[param]?.type === 'enum' ? (
+                  <Field label={`${param}: Erlaubte Werte`} htmlFor={`snippet-options-${param}`} hint="Durch Kommas getrennt">
+                    <Input
+                      id={`snippet-options-${param}`}
+                      spellCheck={false}
+                      value={params[param]?.options ?? ''}
+                      onChange={(event) => setParam(param, { options: event.target.value })}
+                    />
+                  </Field>
+                ) : (
+                  <Checkbox
+                    label={`${param}: Pflichtfeld`}
+                    checked={params[param]?.required !== false}
+                    onChange={(required) => setParam(param, { required })}
+                  />
+                )}
+              </div>
             </div>
           ))}
           <Field label="Tags" htmlFor="snippet-tags" hint="Durch Kommas getrennt" error={errors.tags}>
@@ -149,6 +223,20 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
               />
             ))}
           </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-medium text-secondary">Passende Systeme (keine Auswahl: alle)</span>
+            {SNIPPET_PLATFORMS.map((platform) => (
+              <Checkbox
+                key={platform}
+                label={platformLabel(platform)}
+                checked={platforms.includes(platform)}
+                onChange={(checked) => setPlatforms((current) => (checked ? [...current, platform] : current.filter((item) => item !== platform)))}
+              />
+            ))}
+          </div>
+          <Field label="Benötigte Programme" htmlFor="snippet-tools" hint="Durch Kommas getrennt, zum Beispiel docker, jq" error={errors.requiredTools}>
+            <Input id="snippet-tools" spellCheck={false} value={requiredTools} onChange={(event) => setRequiredTools(event.target.value)} />
+          </Field>
           <Checkbox label="Favorit" checked={favorite} onChange={setFavorite} />
         </div>
         <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
@@ -162,7 +250,8 @@ function SnippetEditor({ snippet, onClose }: { snippet: Snippet | null; onClose(
   );
 }
 
-function SnippetRow({ snippet, onEdit }: { snippet: Snippet; onEdit(): void }) {
+function SnippetRow({ snippet, onEdit, onCopied }: { snippet: Snippet; onEdit(): void; onCopied(copy: Snippet): void }) {
+  const duplicate = useSnippets((state) => state.duplicate);
   const setFavorite = useSnippets((state) => state.setFavorite);
   const remove = useSnippets((state) => state.remove);
   const openRun = useSnippets((state) => state.openRun);
@@ -179,6 +268,12 @@ function SnippetRow({ snippet, onEdit }: { snippet: Snippet; onEdit(): void }) {
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[13px] font-medium text-text">{snippet.name}</span>
+          {snippet.source === 'builtin' && (
+            <span className="flex flex-none items-center gap-1 text-[11px] text-subtle" title="Aus der Bibliothek, nur lesbar">
+              <Lock size={11} aria-hidden /> Bibliothek
+            </span>
+          )}
+          {snippet.risk !== 'safe' && <RiskBadge risk={snippet.risk} compact />}
           {snippet.category && <span className="flex-none rounded-full bg-raised px-2 text-[11px] leading-[18px] text-secondary">{snippet.category}</span>}
           {snippet.tags.map((tag) => (
             <span key={tag} className="flex-none text-[11px] text-subtle">
@@ -195,30 +290,36 @@ function SnippetRow({ snippet, onEdit }: { snippet: Snippet; onEdit(): void }) {
         <IconButton label={`${snippet.name} einfügen oder ausführen`} onClick={() => openRun(snippet)}>
           <Play size={13} className="text-cyan" />
         </IconButton>
-        <IconButton label={`${snippet.name} bearbeiten`} onClick={onEdit}>
-          <Pencil size={13} />
+        <IconButton label={`${snippet.name} als Kopie bearbeiten`} onClick={() => void attempt(async () => onCopied(await duplicate(snippet.id)))}>
+          <Copy size={13} />
         </IconButton>
-        <IconButton
-          label={`${snippet.name} löschen`}
-          onClick={() =>
-            askConfirm({
-              title: `„${snippet.name}“ löschen?`,
-              message: 'Das Snippet wird entfernt.',
-              confirmLabel: 'Löschen',
-              danger: true,
-              onConfirm: () => void attempt(() => remove(snippet.id))
-            })
-          }
-        >
-          <Trash2 size={13} />
-        </IconButton>
+        {snippet.source === 'user' && (
+          <>
+            <IconButton label={`${snippet.name} bearbeiten`} onClick={onEdit}>
+              <Pencil size={13} />
+            </IconButton>
+            <IconButton
+              label={`${snippet.name} löschen`}
+              onClick={() =>
+                askConfirm({
+                  title: `„${snippet.name}“ löschen?`,
+                  message: 'Das Snippet wird entfernt.',
+                  confirmLabel: 'Löschen',
+                  danger: true,
+                  onConfirm: () => void attempt(() => remove(snippet.id))
+                })
+              }
+            >
+              <Trash2 size={13} />
+            </IconButton>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function SnippetList({ onEdit }: { onEdit(snippet: Snippet): void }) {
-  const snippets = useSnippets((state) => state.snippets);
+function SnippetList({ snippets, onEdit, onCopied }: { snippets: readonly Snippet[]; onEdit(snippet: Snippet): void; onCopied(copy: Snippet): void }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
@@ -261,7 +362,7 @@ function SnippetList({ onEdit }: { onEdit(snippet: Snippet): void }) {
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {visible.map((snippet) => (
-          <SnippetRow key={snippet.id} snippet={snippet} onEdit={() => onEdit(snippet)} />
+          <SnippetRow key={snippet.id} snippet={snippet} onEdit={() => onEdit(snippet)} onCopied={onCopied} />
         ))}
         {visible.length === 0 && <p className="px-4 py-6 text-center text-[13px] text-secondary">Keine Treffer</p>}
       </div>
@@ -272,18 +373,26 @@ function SnippetList({ onEdit }: { onEdit(snippet: Snippet): void }) {
 export function SnippetsView() {
   const snippets = useSnippets((state) => state.snippets);
   const load = useSnippets((state) => state.load);
-  const [tab, setTab] = useState<'snippets' | 'history'>('snippets');
+  const [tab, setTab] = useState<'snippets' | 'library' | 'history'>('snippets');
   const [editing, setEditing] = useState<{ snippet: Snippet | null } | null>(null);
 
   useEffect(() => {
     void attempt(load);
   }, [load]);
 
+  const personal = useMemo(() => snippets.filter((item) => item.source === 'user'), [snippets]);
+  // The library has its own tab. Here it only shows what someone chose to keep at hand.
+  const mine = useMemo(() => snippets.filter((item) => item.source === 'user' || item.favorite), [snippets]);
+  const openCopy = (copy: Snippet) => {
+    setTab('snippets');
+    setEditing({ snippet: copy });
+  };
+
   return (
     <ToolView
       testId="snippets-view"
       title="Snippets"
-      description={snippets.length === 1 ? '1 gespeicherter Befehl' : `${snippets.length} gespeicherte Befehle`}
+      description={personal.length === 1 ? '1 gespeicherter Befehl' : `${personal.length} gespeicherte Befehle`}
       actions={
         <Button variant="primary" onClick={() => setEditing({ snippet: null })}>
           <Plus size={14} /> Snippet
@@ -294,6 +403,7 @@ export function SnippetsView() {
         {(
           [
             { id: 'snippets', label: 'Snippets', icon: <Braces size={14} /> },
+            { id: 'library', label: 'Bibliothek', icon: <Library size={14} /> },
             { id: 'history', label: 'Verlauf', icon: <History size={14} /> }
           ] as const
         ).map((item) => (
@@ -314,21 +424,28 @@ export function SnippetsView() {
       </div>
       {tab === 'history' ? (
         <HistoryTab />
-      ) : snippets.length === 0 ? (
+      ) : tab === 'library' ? (
+        <PresetBrowser onCopied={openCopy} />
+      ) : mine.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             icon={<Braces size={26} />}
             title="Noch keine Snippets"
             description="Speichere Befehle, die du oft brauchst. Mit {{name}} fragt RYFT beim Einsetzen nach einem Wert."
             action={
-              <Button onClick={() => setEditing({ snippet: null })}>
-                <Plus size={14} /> Snippet hinzufügen
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => setTab('library')}>
+                  <Library size={14} /> Bibliothek öffnen
+                </Button>
+                <Button onClick={() => setEditing({ snippet: null })}>
+                  <Plus size={14} /> Snippet hinzufügen
+                </Button>
+              </div>
             }
           />
         </div>
       ) : (
-        <SnippetList onEdit={(snippet) => setEditing({ snippet })} />
+        <SnippetList snippets={mine} onEdit={(snippet) => setEditing({ snippet })} onCopied={openCopy} />
       )}
       {editing && <SnippetEditor snippet={editing.snippet} onClose={() => setEditing(null)} />}
     </ToolView>

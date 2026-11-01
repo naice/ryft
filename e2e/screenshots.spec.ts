@@ -286,6 +286,11 @@ test('productivity and developer tools', async () => {
     await page.waitForTimeout(200);
     await shot(page, 'snippets');
 
+    await page.getByRole('tab', { name: 'Bibliothek', exact: true }).click();
+    await page.getByTestId('preset-row').nth(2).getByRole('button').nth(1).click();
+    await page.waitForTimeout(300);
+    await shot(page, 'snippet-library');
+
     await nav('SSH Keys').click();
     await page.getByRole('button', { name: 'Erzeugen' }).click();
     const keyDialog = page.getByRole('dialog');

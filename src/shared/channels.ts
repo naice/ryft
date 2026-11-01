@@ -68,6 +68,8 @@ export const Channels = {
   snippetsUpdate: 'snippets:update',
   snippetsDelete: 'snippets:delete',
   snippetsSetFavorite: 'snippets:setFavorite',
+  snippetsDuplicate: 'snippets:duplicate',
+  snippetsDetect: 'snippets:detect',
   commandHistoryList: 'commandHistory:list',
   commandHistoryDelete: 'commandHistory:delete',
   commandHistoryClear: 'commandHistory:clear',

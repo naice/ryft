@@ -102,3 +102,29 @@
 - Stopping or restarting a container asks for confirmation.
 - Session logging is off by default and records output, never keystrokes. Its limit, that output can contain secrets, is stated in the UI.
 - New sessions never join a running broadcast, and sessions that disconnect leave it.
+
+## RYFT v1.3 — Built-in Snippet Library
+
+### Added
+
+- Versioned built-in library of 178 snippets with stable ids: Linux system, networking, SSH, Docker, Git, troubleshooting, files and
+  Windows PowerShell. Each entry declares shells, platforms, required tools, typed parameters and a risk level.
+- Library browser under **Snippets → Bibliothek** with search, categories, descriptions, command preview, favorites, and risk and
+  compatibility indicators.
+- Compatibility check against the selected terminal's platform, shell and available tools. Anything undetected is shown as unknown.
+- Typed snippet parameters (`text`, `integer`, `port`, `host`, `user`, `path`, `identifier`, `enum`, `url`) with required fields,
+  defaults and per-field validation. The snippet editor can set them on personal snippets too.
+- Duplicating a built-in entry into a personal, editable copy.
+- Compatible library favorites in the terminal suggestions, and the remaining compatible entries once a query is typed.
+
+### Changed
+
+- The snippet dialog names the risk of the expanded command, which can be higher than the template's. **Einfügen** is the primary action.
+- Running a dangerous command, or a modifying command on several sessions, requires ticking an acknowledgement in the confirmation.
+
+### Security
+
+- Parameter values are quoted per shell and for the quotes around their placeholder. Values a shell cannot safely receive are refused:
+  a second shell re-parsing the command, double quotes inside `$()`, or characters Windows PowerShell mangles when passing to a program.
+- Terminal detection only reads: system name, `$SHELL`, and `command -v` for known tool names.
+- Built-in entries are read-only in the main process, not only in the UI.

@@ -158,6 +158,12 @@ export class DockerService {
     return { id: 'docker', label, file, args };
   }
 
+  /** Runs a read-only script in a running container, for what the terminal in it can do. */
+  async probe(endpoint: DockerEndpoint, containerId: string, script: string): Promise<string> {
+    await this.assertUsable(endpoint);
+    return this.run(endpoint, ['exec', containerId, 'sh', '-c', script]);
+  }
+
   disposeOwner(ownerId: number): void {
     for (const [streamId, stream] of [...this.streams]) {
       if (stream.ownerId === ownerId) this.release(streamId, stream);

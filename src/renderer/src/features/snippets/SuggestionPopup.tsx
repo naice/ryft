@@ -3,11 +3,14 @@ import { Command } from 'cmdk';
 import { Dialog as RadixDialog } from 'radix-ui';
 import { Braces, History, Search } from 'lucide-react';
 import { Channels } from '@shared/channels';
-import type { CommandHistoryEntry } from '@shared/contracts';
+import type { CommandHistoryEntry, Snippet } from '@shared/contracts';
 import { rankSuggestions } from '@shared/features/commandHistory';
+import { evaluateCompatibility, mergeContext, UNKNOWN_CONTEXT } from '@shared/features/snippetCompat';
 import { placeholdersOf } from '@shared/features/snippets';
 import { api } from '../../lib/api';
+import { liveTargets } from '../../lib/sessionTargets';
 import { attempt, useApp } from '../../state/appStore';
+import { useWorkspace } from '../../state/workspaceStore';
 import { insertIntoPane, useSnippets } from './snippetStore';
 
 const ITEM =
@@ -19,6 +22,13 @@ export function SuggestionPopup() {
   const snippets = useSnippets((state) => state.snippets);
   const load = useSnippets((state) => state.load);
   const openRun = useSnippets((state) => state.openRun);
+  const contexts = useSnippets((state) => state.contexts);
+  const tabs = useWorkspace((state) => state.tabs);
+  const panes = useWorkspace((state) => state.panes);
+  const hosts = useApp((state) => state.hosts);
+  const shells = useApp((state) => state.shells);
+  const preferences = useApp((state) => state.preferences);
+  const nodePlatform = useApp((state) => state.info?.platform);
   const historyEnabled = useApp((state) => state.preferences?.commandHistoryEnabled ?? false);
   const [history, setHistory] = useState<CommandHistoryEntry[]>([]);
   const [query, setQuery] = useState('');
@@ -33,7 +43,16 @@ export function SuggestionPopup() {
     });
   }, [open, load, historyEnabled]);
 
-  const suggestions = useMemo(() => rankSuggestions(query, history, snippets, 30), [query, history, snippets]);
+  const suggestions = useMemo(() => {
+    const target = liveTargets(tabs, panes, hosts, shells, preferences, nodePlatform).find((item) => item.paneId === paneId);
+    const context = target && paneId ? mergeContext(target.context, contexts[paneId]) : UNKNOWN_CONTEXT;
+    // A personal command comes first. The library only fills up what is left, and never offers what cannot run here.
+    const fits = (item: Snippet) => evaluateCompatibility(item, context).status !== 'incompatible';
+    const own = snippets.filter((item) => item.source === 'user' || (item.favorite && fits(item)));
+    const library = query.trim() ? snippets.filter((item) => item.source === 'builtin' && !item.favorite && fits(item)) : [];
+    const first = rankSuggestions(query, history, own, 30);
+    return [...first, ...rankSuggestions(query, [], library, 30 - first.length)];
+  }, [query, history, snippets, contexts, paneId, tabs, panes, hosts, shells, preferences, nodePlatform]);
 
   const choose = (index: number) => {
     const suggestion = suggestions[index];

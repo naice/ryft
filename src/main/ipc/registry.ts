@@ -1,6 +1,7 @@
 import { AiError } from '../ai/aiProvider';
 import { DockerError } from '../docker/dockerService';
 import { SessionLogError } from '../logging/sessionLogger';
+import { ReadOnlySnippetError } from '../snippets/snippetRepository';
 import { z } from 'zod';
 import type { InvokeChannel } from '@shared/channels';
 import { invokeInputSchemas, sendInputSchemas, type InvokeResult } from '@shared/contracts';
@@ -62,7 +63,8 @@ const PUBLIC_ERRORS = [
   WorkspaceFormatError,
   DockerError,
   AiError,
-  SessionLogError
+  SessionLogError,
+  ReadOnlySnippetError
 ];
 
 /** The renderer's document is either the packaged file or, in development, the Vite server. */

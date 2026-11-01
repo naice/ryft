@@ -1,12 +1,12 @@
-# RYFT – Implementation Progress (MVP → v1.2)
+# RYFT – Implementation Progress (MVP → v1.3)
 
 Status log of the upgrade. `docs/PROGRESS.md` remains the log of the MVP. Everything listed as *verified* has been
 executed; everything else is explicitly marked.
 
 ## Current phase
 
-**v1.2 implementation complete; v1.0, v1.1 and v1.2 gates recorded below.** The work is uncommitted in the working tree on top of
-`ef68f28`, and nothing has been pushed or released. `package.json` still says version 0.1.0.
+**v1.3 implementation complete; the gates of v1.0 to v1.3 are recorded below.** The work is committed and released through `main`.
+`package.json` still says version 0.1.0, so release tags stay at `v0.1.N` while the feature milestones are named v1.0 to v1.3.
 
 ## Status
 
@@ -15,8 +15,9 @@ executed; everything else is explicitly marked.
 | v1.0 Connectivity & Security | Completed, gate passed |
 | v1.1 Productivity | Completed, gate passed with the open points listed there |
 | v1.2 Developer Edition | Completed, gate passed with the open points listed there |
+| v1.3 Built-in Snippet Library | Completed, gate passed with the open points listed there |
 | In progress | Nothing |
-| Pending | Execution on Linux and macOS; decisions on version number, commit and release |
+| Pending | Running the app itself on Linux and macOS beyond the release smoke test; decision on the version number |
 
 ## Starting point (analysis of the MVP, commit `ef68f28`)
 
@@ -61,25 +62,25 @@ Full picture: [ARCHITECTURE.md](ARCHITECTURE.md).
 | 2 | `authProfiles`, `forwardProfiles`, `hosts.authProfileId`, `hosts.options` (JSON, defaults to `{}`) |
 | 3 | `workspaces`, `snippets`, `commandHistory`, `managedKeys` |
 | 4 | `sessionLogs` |
+| 5 | `presetLibrary`, library columns on `snippets` including `risk` |
 
 Backup `<db>.bak-v<N>` before migrating; each migration is a transaction; a newer database is refused instead of being damaged.
 
 ## Test results
 
-Latest full run on Windows 11, Node 24.19, 2026-11-01. All numbers come from actual runs. The last code change was one label in
-`SnippetsView.tsx`. All suites ran after it, except `tests/real` and the `-t "real "` integration tests, which ran shortly before it
-and do not cover the renderer.
+Latest full run on Windows 11, Node 24.19, 2026-11-01, after the v1.3 code. All numbers come from actual runs. `tests/real`, the
+`-t "real "` integration tests and the packaged run were last executed before v1.3 and were not repeated for it.
 
 | Suite | Result |
 | --- | --- |
 | `tsc --noEmit` | clean |
 | `eslint .` | clean |
-| `vitest run` (unit and integration, gated tests skipped) | 289 passed, 10 skipped |
-| `tests/real` against real OpenSSH in WSL (`tests/fixtures/wsl-openssh.sh`) | 15/15 passed, including 512 MB streamed upload, jump hosts and the bash history hook |
-| `tests/integration/developer.test.ts -t "real "` against real WSL, Docker and Ollama | 11/11 passed; no container with the test label left afterwards |
-| `playwright --project=e2e` (app, connectivity, productivity, developer) | 42/42 passed |
+| `vitest run` (unit and integration, gated tests skipped) | 850 passed, 10 skipped |
+| `tests/real` against real OpenSSH in WSL (`tests/fixtures/wsl-openssh.sh`), before v1.3 | 15/15 passed, including 512 MB streamed upload, jump hosts and the bash history hook |
+| `tests/integration/developer.test.ts -t "real "` against real WSL, Docker and Ollama, before v1.3 | 11/11 passed; no container with the test label left afterwards |
+| `playwright --project=e2e` (app, connectivity, productivity, developer, snippetLibrary) | 52/52 passed |
 | `playwright --project=visual` (screenshots) | 8/8 passed |
-| `playwright --project=packaged` after `npm run package:dir` | 1/1 passed |
+| `playwright --project=packaged` after `npm run package:dir`, before v1.3 | 1/1 passed |
 | `npm run check:docs` | passed |
 
 Not executed: the app on Linux and macOS, zsh, a real system SSH agent, key installation on a real OpenSSH server (the test server's
@@ -124,6 +125,37 @@ home is a real account, so this deliberately stays limited to the in-process ser
 
 Remote Docker contexts over SSH or TLS were not available and are unverified. Docker Desktop on Windows was not available either.
 
+### v1.3 release gate
+
+| Gate item | Evidence | Result |
+| --- | --- | --- |
+| Import without duplicates or loss of user data | `tests/integration/snippetLibrary.test.ts`, restart in `e2e/snippetLibrary.spec.ts` | passed |
+| Built-ins read-only; favorite and copy work | integration, E2E | passed |
+| Compatibility, unknown when undetected | unit, integration; local PowerShell in E2E; SSH probe against the in-process server | passed; **no real remote host, Linux or macOS desktop** |
+| Parameters, validation, quoting | `tests/unit/snippetLibrary.test.ts`, `tests/unit/snippetSafety.test.ts` | passed |
+| Security classification | unit tests, including every preset's declared risk against the classifier | passed; a heuristic, not a guarantee |
+| Inserting does not execute; execution confirmed | `e2e/snippetLibrary.spec.ts`, `e2e/productivity.spec.ts` | passed |
+| Earlier functionality | full suites above | passed |
+
+Preset content, one-off run on 2026-11-01. Each applicable preset was expanded for each shell, with sample values for required parameters:
+
+| Check | Result |
+| --- | --- |
+| Expansion | 293/293 |
+| `bash -n` in WSL `Ubuntu-26.04` (parses only) | 135/135 |
+| Windows PowerShell 5.1 parser (parses only) | 99/99 |
+| Read-only presets actually run: bash | 89 runs: 60 exit 0, 29 not |
+| Read-only presets actually run: PowerShell 5.1 | 62 runs: 39 exit 0, none hiding an error, 23 not |
+| Read-only presets actually run: cmd.exe | 30 runs: 14 exit 0, 16 not |
+
+Every non-zero result was read. All come from the environment or the sample values: no Docker on Windows, no container or Compose file, `dig`,
+`traceroute`, `last` and `iostat` not installed, no `sshd` or agent, or a directory given as a file. Three presets that contact an outside
+address were not run (`net.http-headers`, `debug.http-timing`, `ps.http-headers`).
+
+**Not verified by running:** presets classified `caution` or `danger` were parsed but never executed, on purpose. Nothing ran on macOS or
+on a real remote host. A preset that exits non-zero here for an environmental reason has not shown that it does its job. The curated examples
+named in the v1.3 brief were not available, so the library was written from scratch for this release.
+
 ## Security considerations
 
 See the security model in [ARCHITECTURE.md](ARCHITECTURE.md). Limits that remain by design:
@@ -149,6 +181,9 @@ Node 24 or newer is required for `node:sqlite`. Feature availability depends on 
 - Replacing a file on a server without `posix-rename@openssh.com` unlinks the destination first, so a very short window exists.
 - Session logs contain the redraw output of line editors, so a PowerShell line can read `echo deploy finecho deploy finished`.
 - AI answers show a code fence as raw text next to the command card.
+- An upgrade that retires a library entry also removes its favorite flag. Copies stay.
+- Terminal detection over SSH describes a new login, not a shell started later in the terminal. WSL and Docker likewise.
+- The risk classification reads command text. It can be wrong in both directions for scripts, aliases or programs it does not know.
 - The broadcast bar repeats the label of tabs with the same name; the highlighted panes show which ones are meant.
 - `tests/real` logs in as a real account when the fixture runs in WSL. Terminal tests there turn off `HISTFILE` first, after an earlier
   version of the jump host test wrote one line to `~/.bash_history` (removed again).
@@ -157,4 +192,3 @@ Node 24 or newer is required for `node:sqlite`. Feature availability depends on 
 
 1. Run the suites on Linux and macOS, and test zsh and a real system agent.
 2. Decide on the version number; `package.json` still says 0.1.0.
-3. Commit on a branch. Every push to `main` triggers the release workflow, so merging needs an explicit decision.

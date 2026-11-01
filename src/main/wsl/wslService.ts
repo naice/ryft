@@ -26,6 +26,12 @@ export class WslService {
     return this.binary;
   }
 
+  /** Runs a read-only script in a distribution a terminal already keeps running. */
+  probe(distro: string | null, script: string): Promise<string> {
+    if (!this.binary) return Promise.reject(new Error('WSL is not available'));
+    return runWsl(this.binary, [...(distro ? ['--distribution', distro] : []), '--exec', 'sh', '-c', script]);
+  }
+
   async status(): Promise<WslStatus> {
     if (!this.binary) return { available: false, distros: [], error: null };
     try {

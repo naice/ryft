@@ -34,6 +34,8 @@ export interface ConfirmRequest {
   message: string;
   confirmLabel: string;
   danger?: boolean;
+  /** Where one click is too little: the button stays disabled until this statement is ticked. */
+  acknowledge?: string;
   onConfirm(): void;
 }
 

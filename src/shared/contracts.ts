@@ -24,6 +24,7 @@ import {
   type TransferJob
 } from './features/sftp';
 import { sessionLogSchemas, type SessionLogMatch, type SessionLogStateEvent, type SessionLogSummary } from './features/sessionLogs';
+import type { TerminalContext } from './features/snippetCompat';
 import { snippetInputSchema, type Snippet } from './features/snippets';
 import { createWorkspaceSchemas, workspaceNameSchema, type WorkspaceSummary } from './features/workspaces';
 import { distroNameSchema, wslDirectorySchema, type WslStatus } from './features/wsl';
@@ -45,7 +46,8 @@ export type { SessionLogMatch, SessionLogStateEvent, SessionLogSummary } from '.
 export type { WslDistro, WslStatus } from './features/wsl';
 export type { CommandHistoryEntry } from './features/commandHistory';
 export type { ManagedKey } from './features/keys';
-export type { Snippet, SnippetInput, SnippetParam, SnippetShell } from './features/snippets';
+export type { Snippet, SnippetInput, SnippetParam, SnippetParamType, SnippetPlatform, SnippetShell } from './features/snippets';
+export type { TerminalContext } from './features/snippetCompat';
 export type { WorkspaceSummary } from './features/workspaces';
 export type { ForwardInput, ForwardProfile, ForwardRuntime, ForwardStatus } from './features/forwards';
 export { DEFAULT_HOST_OPTIONS, type HostOptions, type ProxyConfig } from './features/hostOptions';
@@ -514,6 +516,8 @@ export const invokeInputSchemas = {
   [Channels.snippetsUpdate]: z.strictObject({ id: idSchema, input: snippetInputSchema }),
   [Channels.snippetsDelete]: z.strictObject({ id: idSchema }),
   [Channels.snippetsSetFavorite]: z.strictObject({ id: idSchema, favorite: z.boolean() }),
+  [Channels.snippetsDuplicate]: z.strictObject({ id: idSchema }),
+  [Channels.snippetsDetect]: z.strictObject({ sessionId: idSchema, contextId: idSchema }),
   [Channels.commandHistoryList]: commandHistoryQuerySchema,
   [Channels.commandHistoryDelete]: z.strictObject({ id: idSchema }),
   [Channels.commandHistoryClear]: none,
@@ -637,6 +641,8 @@ export interface InvokeResults {
   [Channels.snippetsUpdate]: Snippet;
   [Channels.snippetsDelete]: void;
   [Channels.snippetsSetFavorite]: Snippet;
+  [Channels.snippetsDuplicate]: Snippet;
+  [Channels.snippetsDetect]: TerminalContext;
   [Channels.commandHistoryList]: CommandHistoryEntry[];
   [Channels.commandHistoryDelete]: void;
   [Channels.commandHistoryClear]: void;

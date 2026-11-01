@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 
-const MIGRATIONS: readonly string[] = [
+export const MIGRATIONS: readonly string[] = [
   `
   CREATE TABLE groups (
     id TEXT PRIMARY KEY,
@@ -138,6 +138,21 @@ const MIGRATIONS: readonly string[] = [
     truncated INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX idxSessionLogsStarted ON sessionLogs (startedAt);
+  `,
+  // v1.3: the built-in library. Existing rows become personal snippets, and one preset can only ever have one row.
+  `
+  ALTER TABLE snippets ADD COLUMN source TEXT NOT NULL DEFAULT 'user';
+  ALTER TABLE snippets ADD COLUMN presetId TEXT;
+  ALTER TABLE snippets ADD COLUMN presetVersion INTEGER;
+  ALTER TABLE snippets ADD COLUMN platforms TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE snippets ADD COLUMN requiredTools TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE snippets ADD COLUMN risk TEXT;
+  CREATE UNIQUE INDEX snippets_one_per_preset ON snippets(presetId) WHERE source = 'builtin';
+  CREATE TABLE presetLibrary (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    version INTEGER NOT NULL,
+    importedAt TEXT NOT NULL
+  );
   `
 ];
 

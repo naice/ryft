@@ -7,7 +7,7 @@ export default defineConfig({
   fullyParallel: false,
   reporter: [['list']],
   projects: [
-    { name: 'e2e', testMatch: /(app|connectivity|productivity|developer)\.spec\.ts/ },
+    { name: 'e2e', testMatch: /(app|connectivity|productivity|developer|snippetLibrary)\.spec\.ts/ },
     { name: 'visual', testMatch: /screenshots\.spec\.ts/ },
     { name: 'packaged', testMatch: /packaged\.spec\.ts/ }
   ]

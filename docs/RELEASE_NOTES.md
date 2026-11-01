@@ -2,6 +2,14 @@
 
 Dieser Stand ist noch nicht veröffentlicht. Die Details stehen im [Changelog](CHANGELOG.md), die Bedienung im [Benutzerhandbuch](USER_GUIDE.md).
 
+## v1.3 – Snippet-Bibliothek
+
+- **Bibliothek:** 178 mitgelieferte Befehle für Linux, Netzwerk, SSH, Docker, Git, Fehlersuche, Dateien und PowerShell, mit Suche, Kategorien und Vorschau.
+- **Passt es hierher?** RYFT prüft Plattform, Shell und Programme des gewählten Terminals. Was sich nicht erkennen lässt, steht als „Unbekannt“ da.
+- **Eigene Kopien:** Mitgelieferte Einträge sind schreibgeschützt. Du kannst sie als Favorit markieren oder als Kopie bearbeiten, und Updates lassen deine Snippets unangetastet.
+- **Geprüfte Parameter:** Werte werden nach Typ geprüft und passend zur Shell maskiert.
+- **Erst einfügen, dann ausführen:** Ausführen braucht immer eine Bestätigung, gefährliche Befehle zusätzlich ein Häkchen.
+
 ## v1.2 – Developer Edition
 
 - **Docker:** Container ansehen, starten, stoppen und neu starten, Logs live verfolgen und eine Shell im Terminal öffnen.

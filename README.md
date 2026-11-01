@@ -50,7 +50,8 @@ Die Bedienung erklärt das [Benutzerhandbuch](docs/USER_GUIDE.md).
 
 - Tabs und frei teilbare Bereiche, Befehlspalette, Themes und Terminal-Einstellungen
 - Workspaces, die Layout, Hosts und Ordner speichern, auch als Export ohne Geheimnisse
-- Snippets mit Parametern, Vorschau und Ausführung auf ausgewählten Sitzungen
+- Snippets mit typisierten Parametern, Vorschau und Ausführung auf ausgewählten Sitzungen
+- Mitgelieferte Snippet-Bibliothek mit 178 Befehlen, Eignungsprüfung fürs aktuelle Terminal und Einstufung des Risikos
 - Durchsuchbarer Befehlsverlauf und Vorschläge, abschaltbar und mit Ausschlussregeln
 - Broadcast an ausgewählte Sitzungen, mit dauerhafter Warnung und sofortigem Abschalten
 - Sitzungsprotokolle, ab Werk aus, mit Suche, Export und Aufbewahrungsgrenzen
@@ -83,6 +84,8 @@ Die Bedienung erklärt das [Benutzerhandbuch](docs/USER_GUIDE.md).
 | **SSH Keys** | **Docker** |
 | ![KI-Assistent mit Antwort und Befehlsvorschlag](docs/screenshots/ai-assistant.png) | ![Broadcast mit Warnleiste und markierten Zielen](docs/screenshots/broadcast.png) |
 | **KI-Assistent** | **Broadcast** |
+| ![Snippet-Bibliothek mit Kategorien, Befehlsvorschau und Eignung](docs/screenshots/snippet-library.png) | |
+| **Snippet-Bibliothek** | |
 | ![Liste der Sitzungsprotokolle](docs/screenshots/session-logs.png) | |
 | **Sitzungsprotokolle** | |
 

@@ -59,7 +59,28 @@ docker logs --tail {{lines:50}} {{container}}
 `lines` hat den Standardwert 50, `container` musst du ausfüllen. Die Vorschau zeigt den fertigen Befehl.
 
 - **Einfügen** schreibt den Befehl ins aktive Terminal und führt ihn nicht aus.
-- **Ausführen** sendet ihn an die Sitzungen, die du auswählst. Bei mehreren Sitzungen zeigt RYFT vorher alle Ziele und den fertigen Befehl.
+- **Ausführen** sendet ihn an die Sitzungen, die du auswählst, und fragt immer vorher nach. Bei mehreren Sitzungen zeigt RYFT alle Ziele und den fertigen Befehl. Gefährliche Befehle und Änderungen auf mehreren Sitzungen bestätigst du zusätzlich mit einem Häkchen.
+
+Im Editor kannst du jedem Parameter einen Typ geben, zum Beispiel Port oder Pfad, und ihn als Pflichtfeld markieren. RYFT prüft den Wert dann schon bei der Eingabe.
+
+### Bibliothek
+
+Unter **Snippets → Bibliothek** liegen mitgelieferte Befehle für Linux, Netzwerk, SSH, Docker, Git, Fehlersuche, Dateien und PowerShell. Wähle oben das Terminal aus, für das du suchst. RYFT zeigt dann an jedem Eintrag:
+
+| Anzeige | Bedeutung |
+| --- | --- |
+| Passt | Plattform, Shell und benötigte Programme stimmen |
+| Passt nicht | Etwas davon fehlt sicher, der Grund steht im Eintrag |
+| Unbekannt | RYFT konnte es nicht feststellen. Das heißt nicht, dass der Befehl läuft. |
+| Nur lesend | Der Befehl ändert nichts |
+| Ändert etwas | Der Befehl ändert Dateien, Dienste oder Einstellungen |
+| Gefährlich | Der Befehl kann Daten löschen oder einen Dienst unterbrechen |
+
+**Nur passende** blendet aus, was sicher nicht passt. Unbekanntes bleibt sichtbar. **Erkennen** fragt das Terminal erneut ab. Bei SSH prüft RYFT das, was eine neue Anmeldung vorfindet. Eine Shell, die du später im Terminal startest, sieht es nicht.
+
+Mitgelieferte Einträge kannst du nicht ändern oder löschen. Mit dem Stern landen sie als Favorit unter **Snippets**, und **Kopie bearbeiten** legt ein eigenes Snippet an, das dir gehört. Updates von RYFT aktualisieren die Bibliothek und lassen deine Snippets und Kopien unangetastet. Favoriten bleiben erhalten, solange es den Eintrag gibt. Streicht ein Update einen Eintrag aus der Bibliothek, verschwindet er auch aus deinen Favoriten. Eine Kopie bleibt dir in jedem Fall.
+
+Die Einstufung ist eine Hilfe und keine Garantie. Lies den fertigen Befehl, bevor du ihn ausführst.
 
 ## Befehlsverlauf und Vorschläge
 

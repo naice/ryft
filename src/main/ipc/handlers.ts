@@ -171,6 +171,8 @@ export function createHandlers(services: Services, shells: ShellDefinition[], pl
     [Channels.snippetsUpdate]: ({ id, input }) => snippets.update(id, input),
     [Channels.snippetsDelete]: ({ id }) => snippets.delete(id),
     [Channels.snippetsSetFavorite]: ({ id, favorite }) => snippets.setFavorite(id, favorite),
+    [Channels.snippetsDuplicate]: ({ id }) => snippets.duplicate(id),
+    [Channels.snippetsDetect]: ({ sessionId, contextId }, caller) => services.detectTerminal(caller.ownerId, sessionId, contextId),
     [Channels.commandHistoryList]: (input) => commandHistory.list(input),
     [Channels.commandHistoryDelete]: ({ id }) => commandHistory.delete(id),
     [Channels.commandHistoryClear]: () => commandHistory.clear(),

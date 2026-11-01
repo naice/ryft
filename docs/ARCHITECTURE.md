@@ -1,6 +1,6 @@
 # RYFT architecture
 
-For people working on the code. It describes the state after v1.2. Usage is covered in [USER_GUIDE.md](USER_GUIDE.md), and test
+For people working on the code. It describes the state after v1.3. Usage is covered in [USER_GUIDE.md](USER_GUIDE.md), and test
 results and open points in [IMPLEMENTATION_PROGRESS.md](IMPLEMENTATION_PROGRESS.md).
 
 ## Overview
@@ -77,6 +77,33 @@ prompts and full-screen programs cannot reach the history: RYFT never derives co
 | bash, zsh over SSH | A setup line sent after login, for hosts that opted in. Other POSIX shells ignore it. |
 | Others | No history; snippets and manual use keep working |
 
+## Snippet library (v1.3)
+
+The content lives in `src/main/snippets/presets/*`, one file per category, with `PRESET_LIBRARY.version` over all of it. Rules that the
+renderer needs as well are pure and shared: `snippets.ts` (parameter types, quoting, expansion), `snippetRisk.ts` (classification) and
+`snippetCompat.ts` (matching a snippet against a terminal).
+
+**Import.** `SnippetRepository.importPresets` runs on every start, in one transaction, and a second run changes nothing. A preset is
+identified by its id, and a unique index allows one `source = 'builtin'` row per preset. A row is rewritten only if its `version` or
+content differs, keeping its favorite flag and creation date. A preset retired from the library loses its row, favorite flag included. A
+database that has seen a newer library is left alone. User rows are never touched by the import, and a copy is an ordinary user row with
+no link to its original. Write channels refuse built-in rows in the main process; only the favorite flag can change.
+
+**Detection.** `Services.detectTerminal(ownerId, sessionId, contextId)` checks that the session belongs to the window, then asks the
+matching service. `toolProbe.ts` holds the read-only probe. A probe that fails, times out or returns nonsense yields `UNKNOWN_CONTEXT`,
+never a guess. Three states follow from it: `compatible`, `incompatible` and `unknown`. A tool counts as missing only where the absence is
+reliable, which is why Electron's shorter PATH on Linux and macOS leaves it unknown. Over SSH the probe uses a separate exec channel, so it
+never writes to the terminal, but it also cannot see a shell started later in that terminal.
+
+**Expansion.** `expandSnippet` checks each value against its type, then quotes it for the shell and for the quotes around its placeholder.
+Where no quoting is safe it throws instead: a template that hands text to another shell (`ssh`, `sh -c`, `docker exec`), a value in `"$(…)"`,
+or characters Windows PowerShell mangles when calling a native program. A typed value refuses a leading dash, so that it cannot become an
+option, unless the parameter sets `allowDash` because it follows an option or is plain data.
+
+**Classification.** `classifyCommand` looks through prefixes like `sudo`, `env` and `timeout`, splits pipelines and is deliberately
+pessimistic: only commands on the read-only list count as safe, so an unknown one is `caution`. It helps the user decide and is not a
+sandbox. The dialog shows the higher of the declared and the classified risk of the expanded command.
+
 ## AI assistant
 
 `AiProvider` (`src/main/ai/aiProvider.ts`) abstracts the backend; `OllamaProvider` is the only implementation. `AiService` refuses
@@ -110,6 +137,7 @@ and left unchanged.
 | 2 | v1.0 | `authProfiles`, `forwardProfiles`, `hosts.authProfileId`, `hosts.options` |
 | 3 | v1.1 | `workspaces`, `snippets`, `commandHistory`, `managedKeys` |
 | 4 | v1.2 | `sessionLogs` |
+| 5 | v1.3 | `presetLibrary` and the library columns on `snippets`, including `risk` |
 
 ## Security model
 
@@ -122,6 +150,8 @@ and left unchanged.
 | Terminal output as an attack | AI answers and logs are text; nothing they contain is executed or followed |
 | Accidental mass execution | Broadcast and multi-session snippets need explicit targets and a confirmation; new sessions never join |
 | Command injection | Argument arrays for CLI tools; POSIX quoting for the one remote `cd` line; validated identifiers |
+| Hostile snippet parameter values | Type validation and shell-aware quoting; values that cannot be quoted safely are refused |
+| Careless execution of library commands | Inserting never runs anything; running always asks, and dangerous or multi-session changes need an extra tick |
 
 Limits: `safeStorage` does not protect against malware running as the same user. Session logs, command history and environment
 variables in host options are stored unencrypted. Text sent to a model on a private network address leaves this computer.

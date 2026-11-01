@@ -142,12 +142,12 @@ describe('snippets', () => {
         params: [{ name: 'lines', defaultValue: '100', description: '' }],
         favorite: false
       });
-      expect(snippets.list()[0]!.params[0]!.defaultValue).toBe('100');
+      expect(snippets.get(created.id).params[0]!.defaultValue).toBe('100');
       const updated = snippets.update(created.id, { ...created, name: 'Container-Logs' });
       expect(updated.name).toBe('Container-Logs');
       expect(snippets.setFavorite(created.id, true).favorite).toBe(true);
       snippets.delete(created.id);
-      expect(snippets.list()).toEqual([]);
+      expect(snippets.list().filter((item) => item.source === 'user')).toEqual([]);
     } finally {
       harness.dispose();
     }

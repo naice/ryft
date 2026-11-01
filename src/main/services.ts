@@ -25,7 +25,11 @@ import { HostKeyChanges } from './security/hostKeyChanges';
 import { readOpenSshKnownHosts } from './security/knownHosts';
 import { HostSecrets, type SecretStore } from './security/secretVault';
 import { SessionManager } from './sessions/sessionManager';
+import { UNKNOWN_CONTEXT, type TerminalContext } from '@shared/features/snippetCompat';
+import { log } from './logger';
+import { PRESET_LIBRARY } from './snippets/presets';
 import { SnippetRepository } from './snippets/snippetRepository';
+import { localPlatform, probeOverSsh, probeWith, runFile, scanPath } from './snippets/toolProbe';
 import { SessionFailure, type Prompter, type SessionEventSink } from './sessions/types';
 import { LocalFsScope } from './sftp/localFs';
 import { SftpManager, type SftpEventSink } from './sftp/sftpManager';
@@ -93,6 +97,12 @@ export function createServices(config: ServicesConfig) {
   const secrets = new HostSecrets(config.secretStore);
   const workspaces = new WorkspaceRepository(config.db);
   const snippets = new SnippetRepository(config.db);
+  try {
+    snippets.importPresets(PRESET_LIBRARY);
+  } catch (error) {
+    // Personal snippets stay usable without the library, and the next start tries again.
+    log.error('Importing the snippet library failed', error);
+  }
   const commandHistory = new CommandHistoryRepository(config.db);
   const wsl = new WslService(config.wslBinary === undefined ? defaultWslBinary(config.shells) : config.wslBinary);
   const docker = new DockerService(config.dockerBinary === undefined ? defaultDockerBinary() : config.dockerBinary, wsl, config.sink);
@@ -347,6 +357,47 @@ export function createServices(config: ServicesConfig) {
     }
   };
 
+  /**
+   * What a terminal can run, found out on the side and never by typing into it. This sees how the session
+   * started, so a shell someone switched to inside the terminal stays invisible.
+   */
+  const detectTerminal = async (ownerId: number, sessionId: string, contextId: string): Promise<TerminalContext> => {
+    const target = sessions.targetOf(ownerId, sessionId);
+    const tools = snippets.requiredToolNames();
+    const prefs = preferences.getAll();
+    if (target.kind === 'docker') {
+      const context = await probeWith((script) => docker.probe(target.endpoint, target.containerId, script), tools);
+      return context === UNKNOWN_CONTEXT ? context : { ...context, shell: 'posix' };
+    }
+    if (target.kind === 'wsl') {
+      return probeWith((script) => wsl.probe(target.distro ?? prefs.wslDefaultDistro, script), tools);
+    }
+    if (target.kind === 'ssh') {
+      const prompt = sessions.createPrompter(ownerId, contextId);
+      try {
+        const lease = await pool.acquire(ownerId, target.hostId, prompt);
+        try {
+          return await probeOverSsh(lease.client, tools);
+        } finally {
+          lease.release();
+        }
+      } catch {
+        return UNKNOWN_CONTEXT;
+      } finally {
+        sessions.cancelContext(contextId);
+      }
+    }
+    const shell = resolveShell(config.shells, target.shellId ?? prefs.defaultShellId);
+    const platform = localPlatform(process.platform);
+    if (!shell) return { ...UNKNOWN_CONTEXT, platform };
+    if (shell.id === 'wsl') return probeWith((script) => wsl.probe(prefs.wslDefaultDistro, script), tools);
+    if (shell.id === 'pwsh' || shell.id === 'powershell' || shell.id === 'cmd') {
+      return { platform, shell: shell.id === 'cmd' ? 'cmd' : 'powershell', tools: scanPath(tools, process.platform) };
+    }
+    const context = await probeWith((script) => runFile(shell.file, ['-lc', script]), tools);
+    return { platform, shell: context.shell, tools: context.tools };
+  };
+
   /** The documented shutdown order: stop users of a connection first, then the connections themselves. */
   const disposeOwner = (ownerId: number): void => {
     ai.disposeOwner(ownerId);
@@ -391,6 +442,7 @@ export function createServices(config: ServicesConfig) {
     commandHistory,
     keys,
     installKey,
+    detectTerminal,
     wsl,
     docker,
     ai,
