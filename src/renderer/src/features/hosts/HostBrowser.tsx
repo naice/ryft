@@ -7,6 +7,7 @@ import { buildSections, type HostSegment } from '../../lib/hostFilter';
 import { collectPanes } from '../../lib/layoutTree';
 import { attempt, useApp } from '../../state/appStore';
 import { useWorkspace } from '../../state/workspaceStore';
+import { isFinishedJob, useSftp } from '../sftp/sftpStore';
 import { Button, cx, EmptyState, IconButton, Input, Modal } from '../../components/ui/primitives';
 import { ServerStackIcon } from '../../components/ui/icons';
 
@@ -30,12 +31,24 @@ function useHostActions(host: Host) {
   return {
     connect: () => connectHost(host.id),
     openInNewTab: () => openTab({ kind: 'ssh', hostId: host.id }),
+    openSftp: () => {
+      const { setNav, toast } = useApp.getState();
+      const sftp = useSftp.getState();
+      setNav('sftp');
+      if (Object.values(sftp.jobs).some((job) => !isFinishedJob(job))) {
+        // Switching would break the running transfers, and that decision needs its own confirmation.
+        toast('info', 'Es laufen noch Übertragungen. Trenne die Verbindung, um den Host zu wechseln.');
+      } else {
+        void sftp.connect(host.id);
+      }
+    },
     edit: () => openEditor(host),
     duplicate: () => void attempt(() => duplicateHost(host.id)),
     remove: () =>
       askConfirm({
         title: `„${host.name}“ löschen?`,
-        message: 'Der Host und seine gespeicherten Zugangsdaten werden entfernt. Bestehende Sitzungen bleiben bestehen.',
+        message:
+          'Der Host, seine gespeicherten Zugangsdaten und seine Port-Weiterleitungen werden entfernt. Laufende Weiterleitungen werden gestoppt, bestehende Terminal-Sitzungen bleiben bestehen.',
         confirmLabel: 'Löschen',
         danger: true,
         onConfirm: () => void attempt(() => deleteHost(host.id))
@@ -116,6 +129,7 @@ function HostRow({ host, selected }: { host: Host; selected: boolean }) {
         <ContextMenu.Content className={MENU_SURFACE}>
           <ContextMenu.Item className={MENU_ITEM} onSelect={actions.connect}>Verbinden</ContextMenu.Item>
           <ContextMenu.Item className={MENU_ITEM} onSelect={actions.openInNewTab}>In neuem Tab öffnen</ContextMenu.Item>
+          <ContextMenu.Item className={MENU_ITEM} onSelect={actions.openSftp}>SFTP öffnen</ContextMenu.Item>
           <ContextMenu.Separator className="my-1 h-px bg-border" />
           <ContextMenu.Item className={MENU_ITEM} onSelect={actions.edit}>Bearbeiten</ContextMenu.Item>
           <ContextMenu.Item className={MENU_ITEM} onSelect={actions.duplicate}>Duplizieren</ContextMenu.Item>

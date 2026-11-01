@@ -4,8 +4,22 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { BaseAgent } from 'ssh2';
-import type { HostInput, PromptResponse, SessionPrompt, SessionStateEvent, VaultStatus } from '@shared/contracts';
+import {
+  DEFAULT_HOST_OPTIONS,
+  type AiChunkEvent,
+  type DockerLogEndEvent,
+  type DockerLogEvent,
+  type ForwardRuntime,
+  type HostInput,
+  type PromptResponse,
+  type SessionLogStateEvent,
+  type SessionPrompt,
+  type SessionStateEvent,
+  type TransferJob,
+  type VaultStatus
+} from '@shared/contracts';
 import type { SessionState } from '@shared/sessionState';
+import type { DockerBinary } from '../../src/main/docker/dockerService';
 import { detectShells } from '../../src/main/pty/shells';
 import type { SecretStore } from '../../src/main/security/secretVault';
 import { createServices } from '../../src/main/services';
@@ -17,7 +31,7 @@ export class MemorySecretStore implements SecretStore {
   readonly values = new Map<string, string>();
   available = true;
   status(): VaultStatus {
-    return { available: this.available, backend: 'test' };
+    return { available: this.available, backend: 'test', keyLost: false };
   }
   get(reference: string): string | null {
     return this.values.get(reference) ?? null;
@@ -44,11 +58,21 @@ export function hostInput(overrides: Partial<HostInput> = {}): HostInput {
     groupId: null,
     tags: [],
     favorite: false,
+    authProfileId: null,
+    options: DEFAULT_HOST_OPTIONS,
     ...overrides
   };
 }
 
-export function createHarness(options: { agent?: string | BaseAgent; reconnectDelaysMs?: readonly number[] } = {}) {
+export function createHarness(
+  options: {
+    agent?: string | BaseAgent;
+    reconnectDelaysMs?: readonly number[];
+    localRoots?: string[];
+    dockerBinary?: DockerBinary | null;
+    wslBinary?: string | null;
+  } = {}
+) {
   const directory = mkdtempSync(join(tmpdir(), 'ryft-test-'));
   const db: DatabaseSync = openDatabase(join(directory, 'test.sqlite'));
   const secretStore = new MemorySecretStore();
@@ -59,9 +83,17 @@ export function createHarness(options: { agent?: string | BaseAgent; reconnectDe
   const promptWaiters: ((prompt: SessionPrompt) => void)[] = [];
   const dataWaiters: (() => void)[] = [];
   let responder: ((prompt: SessionPrompt) => PromptResponse) | null = null;
+  const sftpClosed: { sftpId: string; message: string }[] = [];
+  const transfers = new Map<string, TransferJob>();
+  const forwardStates: ForwardRuntime[] = [];
+  const dockerLogs: DockerLogEvent[] = [];
+  const dockerLogEnds: DockerLogEndEvent[] = [];
+  const aiChunks: AiChunkEvent[] = [];
+  const sessionLogStates: SessionLogStateEvent[] = [];
 
   const services = createServices({
     db,
+    dataDirectory: directory,
     secretStore,
     shells: detectShells(),
     // An empty directory: tests must never see the developer's real known_hosts.
@@ -87,8 +119,34 @@ export function createHarness(options: { agent?: string | BaseAgent; reconnectDe
         const waiter = promptWaiters.shift();
         if (waiter) waiter(event);
         else prompts.push(event);
+      },
+      sftpClosed: (event) => sftpClosed.push(event),
+      transferUpdate: (jobs) => {
+        for (const job of jobs) transfers.set(job.id, job);
+      },
+      transferRemoved: (ids) => {
+        for (const id of ids) transfers.delete(id);
+      },
+      forwardState: (runtime) => {
+        forwardStates.push(runtime);
+      },
+      dockerLog: (event) => {
+        dockerLogs.push(event);
+      },
+      dockerLogEnd: (event) => {
+        dockerLogEnds.push(event);
+      },
+      aiChunk: (event) => {
+        aiChunks.push(event);
+      },
+      sessionLogState: (event) => {
+        sessionLogStates.push(event);
       }
-    }
+    },
+    localRoots: [directory, ...(options.localRoots ?? [])],
+    forwardBackoffMs: [10, 20, 40],
+    dockerBinary: options.dockerBinary,
+    wslBinary: options.wslBinary
   });
 
   return {
@@ -98,6 +156,13 @@ export function createHarness(options: { agent?: string | BaseAgent; reconnectDe
     services,
     states,
     output,
+    sftpClosed,
+    transfers,
+    forwardStates,
+    dockerLogs,
+    dockerLogEnds,
+    aiChunks,
+    sessionLogStates,
     sessionId: () => randomUUID(),
     nextPrompt(): Promise<SessionPrompt> {
       const queued = prompts.shift();
@@ -139,7 +204,7 @@ export function createHarness(options: { agent?: string | BaseAgent; reconnectDe
       }
     },
     dispose(): void {
-      services.sessions.disposeAll();
+      services.disposeAll();
       db.close();
       try {
         rmSync(directory, { recursive: true, force: true, maxRetries: 3 });

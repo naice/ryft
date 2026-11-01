@@ -1,11 +1,22 @@
 import { useApp } from '../../state/appStore';
 import { useWorkspace } from '../../state/workspaceStore';
+import { useBroadcast } from '../broadcast/broadcastStore';
+import { useSnippets } from '../snippets/snippetStore';
 import { resolveShortcut, type ShortcutAction } from './shortcutMap';
 
 export function runShortcut(action: ShortcutAction): void {
+  const broadcast = useBroadcast.getState();
+  // Turning a broadcast off is the one thing that always works, whatever is open.
+  if (action === 'broadcast' && broadcast.active) {
+    broadcast.deactivate();
+    return;
+  }
+  if (broadcast.dialogOpen) return;
   const app = useApp.getState();
   const workspace = useWorkspace.getState();
   // A dialog is modal: nothing may change behind it, for instance a tab closing under a host-key prompt.
+  const snippets = useSnippets.getState();
+  if (snippets.suggestionsFor !== null || snippets.running !== null) return;
   if (app.settingsOpen || app.editor !== null || app.confirm !== null || workspace.prompts.length > 0 || workspace.chooser !== null) return;
   if (app.paletteOpen && action !== 'palette') return;
   switch (action) {
@@ -35,6 +46,12 @@ export function runShortcut(action: ShortcutAction): void {
       break;
     case 'previousPane':
       workspace.cycleFocus(-1);
+      break;
+    case 'suggest':
+      snippets.openSuggestions();
+      break;
+    case 'broadcast':
+      broadcast.setDialogOpen(true);
       break;
   }
 }

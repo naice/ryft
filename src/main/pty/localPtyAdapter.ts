@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import * as nodePty from 'node-pty';
 import type { AdapterHooks, SessionAdapter } from '../sessions/types';
@@ -17,21 +18,40 @@ function shellEnvironment(): Record<string, string> {
   return env;
 }
 
+export interface LocalPtyOptions {
+  /** Falls back to the home folder when it does not exist (any more). */
+  cwd?: string | null;
+  env?: Record<string, string>;
+  filterOutput?: (text: string) => string;
+  /** Asynchronous checks that decide whether this program may start at all. */
+  beforeStart?: () => Promise<void>;
+}
+
 export class LocalPtyAdapter implements SessionAdapter {
   private pty: nodePty.IPty | null = null;
   private disposables: nodePty.IDisposable[] = [];
+  private disposed = false;
+  readonly filterOutput?: (text: string) => string;
 
-  constructor(private readonly shell: ShellDefinition) {}
+  constructor(
+    private readonly shell: ShellDefinition,
+    private readonly options: LocalPtyOptions = {}
+  ) {
+    this.filterOutput = options.filterOutput;
+  }
 
   async start(hooks: AdapterHooks, size: { cols: number; rows: number }): Promise<void> {
+    await this.options.beforeStart?.();
+    if (this.disposed) return;
     let pty: nodePty.IPty;
+    const { cwd } = this.options;
     try {
       pty = nodePty.spawn(this.shell.file, this.shell.args, {
         name: 'xterm-256color',
         cols: size.cols,
         rows: size.rows,
-        cwd: homedir(),
-        env: shellEnvironment()
+        cwd: cwd && existsSync(cwd) ? cwd : homedir(),
+        env: { ...shellEnvironment(), ...this.options.env }
       });
     } catch (error) {
       throw new SessionFailure(
@@ -70,6 +90,7 @@ export class LocalPtyAdapter implements SessionAdapter {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const disposable of this.disposables) disposable.dispose();
     this.disposables = [];
     const pty = this.pty;

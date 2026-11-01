@@ -1,21 +1,39 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { Tooltip } from 'radix-ui';
+import { Channels } from '@shared/channels';
 import { api } from './lib/api';
-import { useApp } from './state/appStore';
+import { attempt, isToolView, useApp } from './state/appStore';
 import { useWorkspace } from './state/workspaceStore';
 import { ConfirmDialog, ToastStack } from './components/ui/primitives';
+import { AiPanel } from './features/ai/AiPanel';
+import { useAi } from './features/ai/aiStore';
+import { BroadcastBar, BroadcastDialog } from './features/broadcast/BroadcastPanel';
+import { useBroadcast } from './features/broadcast/broadcastStore';
+import { DockerView } from './features/docker/DockerView';
+import { ForwardsView } from './features/forwards/ForwardsView';
+import { useForwards } from './features/forwards/forwardStore';
 import { HostBrowser } from './features/hosts/HostBrowser';
 import { HostEditorDialog } from './features/hosts/HostEditorDialog';
+import { KeysView } from './features/keys/KeysView';
+import { LogsView } from './features/logs/LogsView';
+import { useSessionLogs } from './features/logs/logStore';
 import { CommandPalette } from './features/palette/CommandPalette';
 import { SettingsPanel } from './features/settings/SettingsPanel';
+import { SftpView } from './features/sftp/SftpView';
+import { useSftp } from './features/sftp/sftpStore';
 import { NavRail } from './features/shell/NavRail';
+import { SnippetRunDialog } from './features/snippets/SnippetRunDialog';
+import { SnippetsView } from './features/snippets/SnippetsView';
+import { useSnippets } from './features/snippets/snippetStore';
+import { SuggestionPopup } from './features/snippets/SuggestionPopup';
 import { resolveShortcut } from './features/shell/shortcutMap';
 import { handleTerminalKey, runShortcut } from './features/shell/shortcuts';
 import { TitleBar } from './features/shell/TitleBar';
 import { applyTerminalPreferences, configureTerminals, focusTerminal } from './features/terminal/terminalRegistry';
 import { SessionPrompts } from './features/workspace/SessionPrompts';
 import { Workspace } from './features/workspace/Workspace';
+import { WorkspacesView } from './features/workspaces/WorkspacesView';
 
 const MIN_HOST_WIDTH = 220;
 const MAX_HOST_WIDTH = 380;
@@ -35,6 +53,18 @@ function columnsFor(width: number, hostPanelWidth: number): Columns {
 
 let started = false;
 
+/** A default workspace replaces the restored layout. Like that one, it starts disconnected. */
+async function openDefaultWorkspace(): Promise<boolean> {
+  try {
+    const summary = (await api.invoke(Channels.workspacesList)).find((item) => item.isDefault);
+    if (!summary) return false;
+    useWorkspace.getState().openWorkspace(await api.invoke(Channels.workspacesGet, { id: summary.id }), false);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Effects run twice under StrictMode, and a second restore would duplicate every tab. */
 async function startOnce(): Promise<void> {
   if (started) return;
@@ -47,7 +77,12 @@ async function startOnce(): Promise<void> {
   const prefs = useApp.getState().preferences;
   if (!prefs) return;
   applyTerminalPreferences(prefs);
-  if (prefs.restoreLayout) useWorkspace.getState().restore(prefs.workspaceLayout);
+  if (!(await openDefaultWorkspace()) && prefs.restoreLayout) useWorkspace.getState().restore(prefs.workspaceLayout);
+  await attempt(async () => {
+    await Promise.all([useForwards.getState().load(), useSftp.getState().loadJobs()]);
+    // Main only starts the profiles that have restoring explicitly switched on.
+    await api.invoke(Channels.forwardsRestore);
+  });
 }
 
 function useWindowWidth(): number {
@@ -82,7 +117,13 @@ function useSessionEvents() {
     const unsubscribers = [
       api.onSessionData(({ sessionId, data }) => useWorkspace.getState().onData(sessionId, data)),
       api.onSessionState((event) => useWorkspace.getState().onState(event)),
-      api.onSessionPrompt((prompt) => useWorkspace.getState().onPrompt(prompt))
+      api.onSessionPrompt((prompt) => useWorkspace.getState().onPrompt(prompt)),
+      api.onSftpClosed((event) => useSftp.getState().onSftpClosed(event)),
+      api.onTransferUpdate((jobs) => useSftp.getState().onJobs(jobs)),
+      api.onTransferRemoved((ids) => useSftp.getState().onJobsRemoved(ids)),
+      api.onForwardState((runtime) => useForwards.getState().onState(runtime)),
+      api.onAiChunk(({ requestId, text }) => useAi.getState().onChunk(requestId, text)),
+      api.onSessionLogState((event) => useSessionLogs.getState().onState(event))
     ];
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, []);
@@ -183,18 +224,33 @@ export function App() {
   const anyDialogOpen = useApp(
     (state) => state.paletteOpen || state.settingsOpen || state.editor !== null || state.confirm !== null
   );
+  const snippetDialogOpen = useSnippets((state) => state.running !== null || state.suggestionsFor !== null);
+  const broadcastDialogOpen = useBroadcast((state) => state.dialogOpen);
+  const aiOpen = useAi((state) => state.open);
   const promptOpen = useWorkspace((state) => state.prompts.length > 0);
+  const nav = useApp((state) => state.nav);
+  const toolView = isToolView(nav);
   const wasDialogOpen = useRef(false);
   useEffect(() => {
-    const open = anyDialogOpen || promptOpen;
+    const open = anyDialogOpen || promptOpen || snippetDialogOpen || broadcastDialogOpen;
     if (wasDialogOpen.current && !open) {
       // Keyboard users continue typing where they were.
       const { tabs, activeTabId } = useWorkspace.getState();
       const tab = tabs.find((item) => item.id === activeTabId);
-      if (tab) requestAnimationFrame(() => focusTerminal(tab.activePaneId));
+      if (tab && !isToolView(useApp.getState().nav)) requestAnimationFrame(() => focusTerminal(tab.activePaneId));
     }
     wasDialogOpen.current = open;
-  }, [anyDialogOpen, promptOpen]);
+  }, [anyDialogOpen, promptOpen, snippetDialogOpen, broadcastDialogOpen]);
+
+  const wasToolView = useRef(false);
+  useEffect(() => {
+    if (wasToolView.current && !toolView) {
+      const { tabs, activeTabId } = useWorkspace.getState();
+      const tab = tabs.find((item) => item.id === activeTabId);
+      if (tab) requestAnimationFrame(() => focusTerminal(tab.activePaneId));
+    }
+    wasToolView.current = toolView;
+  }, [toolView]);
 
   if (loadError) {
     return (
@@ -220,23 +276,70 @@ export function App() {
         className="flex h-full flex-col border border-[color-mix(in_srgb,var(--ryft-cyan)_16%,transparent)] bg-canvas"
       >
         <TitleBar />
+        <BroadcastBar />
         <div className="flex min-h-0 flex-1 px-3 pb-3">
           <div className="flex-none" style={{ width: columns.nav }}>
             <NavRail compact={columns.compact} />
           </div>
           <div className="w-2 flex-none" />
-          <div className="flex-none" style={{ width: columns.hosts }}>
-            <HostBrowser />
+          {/* Hidden, not unmounted: sessions keep running and their scrollback stays. */}
+          <div className={toolView ? 'hidden' : 'flex min-w-0 flex-1'}>
+            <div className="flex-none" style={{ width: columns.hosts }}>
+              <HostBrowser />
+            </div>
+            <HostColumnGutter width={columns.hosts} />
+            <div className="min-w-[460px] flex-1">
+              <Workspace />
+            </div>
           </div>
-          <HostColumnGutter width={columns.hosts} />
-          <div className="min-w-[460px] flex-1">
-            <Workspace />
-          </div>
+          {nav === 'workspaces' && (
+            <div className="min-w-0 flex-1">
+              <WorkspacesView />
+            </div>
+          )}
+          {nav === 'snippets' && (
+            <div className="min-w-0 flex-1">
+              <SnippetsView />
+            </div>
+          )}
+          {nav === 'keys' && (
+            <div className="min-w-0 flex-1">
+              <KeysView />
+            </div>
+          )}
+          {nav === 'sftp' && (
+            <div className="min-w-0 flex-1">
+              <SftpView />
+            </div>
+          )}
+          {nav === 'forwards' && (
+            <div className="min-w-0 flex-1">
+              <ForwardsView />
+            </div>
+          )}
+          {nav === 'docker' && (
+            <div className="min-w-0 flex-1">
+              <DockerView />
+            </div>
+          )}
+          {nav === 'logs' && (
+            <div className="min-w-0 flex-1">
+              <LogsView />
+            </div>
+          )}
+          {aiOpen && (
+            <div className="ml-2 w-[340px] flex-none">
+              <AiPanel />
+            </div>
+          )}
         </div>
       </div>
       <HostEditorDialog />
       <CommandPalette />
       <SettingsPanel />
+      <SnippetRunDialog />
+      <SuggestionPopup />
+      <BroadcastDialog />
       <SessionPrompts />
       <ConfirmDialog />
       <ToastStack />

@@ -7,7 +7,7 @@ export interface ShellDefinition extends ShellInfo {
   args: string[];
 }
 
-function findOnPath(executable: string): string | null {
+export function findOnPath(executable: string): string | null {
   for (const directory of (process.env.PATH ?? '').split(delimiter)) {
     if (!directory) continue;
     const candidate = join(directory, executable);

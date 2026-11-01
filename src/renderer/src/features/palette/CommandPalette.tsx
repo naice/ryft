@@ -1,14 +1,20 @@
 import { Command } from 'cmdk';
 import { Dialog as RadixDialog } from 'radix-ui';
 import {
+  ArrowLeftRight,
+  Braces,
   Columns2,
+  FolderOpen,
+  KeyRound,
+  LayoutPanelTop,
   Plus,
   Rows2,
   Search,
   Settings,
   SquareTerminal,
-  X
-} from 'lucide-react';
+  X, Bot, Container, RadioTower, ScrollText } from 'lucide-react';
+import { useAi } from '../ai/aiStore';
+import { useBroadcast } from '../broadcast/broadcastStore';
 import { useApp } from '../../state/appStore';
 import { useWorkspace } from '../../state/workspaceStore';
 import { ServerStackIcon } from '../../components/ui/icons';
@@ -29,6 +35,7 @@ export function CommandPalette() {
   const shells = useApp((state) => state.shells);
   const openEditor = useApp((state) => state.openEditor);
   const setSettingsOpen = useApp((state) => state.setSettingsOpen);
+  const setNav = useApp((state) => state.setNav);
   const isMac = useApp((state) => state.info?.platform === 'darwin');
   const connectHost = useWorkspace((state) => state.connectHost);
   const openTab = useWorkspace((state) => state.openTab);
@@ -113,6 +120,37 @@ export function CommandPalette() {
                     </Command.Item>
                   </>
                 )}
+                <Command.Item value="workspaces arbeitsbereiche layout" className={ITEM} onSelect={() => run(() => setNav('workspaces'))}>
+                  <LayoutPanelTop size={16} className="text-secondary" /> Workspaces
+                </Command.Item>
+                <Command.Item value="snippets befehle verlauf" className={ITEM} onSelect={() => run(() => setNav('snippets'))}>
+                  <Braces size={16} className="text-secondary" /> Snippets und Verlauf
+                </Command.Item>
+                <Command.Item value="ssh keys schlüssel erzeugen importieren" className={ITEM} onSelect={() => run(() => setNav('keys'))}>
+                  <KeyRound size={16} className="text-secondary" /> SSH Keys
+                </Command.Item>
+                <Command.Item value="docker container logs shell" className={ITEM} onSelect={() => run(() => setNav('docker'))}>
+                  <Container size={16} className="text-secondary" /> Docker
+                </Command.Item>
+                <Command.Item value="sitzungsprotokolle logging aufzeichnung logs" className={ITEM} onSelect={() => run(() => setNav('logs'))}>
+                  <ScrollText size={16} className="text-secondary" /> Sitzungsprotokolle
+                </Command.Item>
+                <Command.Item value="ai assistant ki ollama modell" className={ITEM} onSelect={() => run(() => useAi.getState().setOpen(true))}>
+                  <Bot size={16} className="text-secondary" /> AI Assistant
+                </Command.Item>
+                <Command.Item value="broadcast mehrere sitzungen senden" className={ITEM} onSelect={() => run(() => useBroadcast.getState().setDialogOpen(true))}>
+                  <RadioTower size={16} className="text-secondary" /> Broadcast starten
+                </Command.Item>
+                <Command.Item value="sftp dateien übertragen" className={ITEM} onSelect={() => run(() => setNav('sftp'))}>
+                  <FolderOpen size={16} className="text-secondary" /> SFTP
+                </Command.Item>
+                <Command.Item
+                  value="port forwarding weiterleitung tunnel socks"
+                  className={ITEM}
+                  onSelect={() => run(() => setNav('forwards'))}
+                >
+                  <ArrowLeftRight size={16} className="text-secondary" /> Port Forwarding
+                </Command.Item>
                 <Command.Item value="einstellungen settings" className={ITEM} onSelect={() => run(() => setSettingsOpen(true))}>
                   <Settings size={16} className="text-secondary" /> Einstellungen
                 </Command.Item>

@@ -1,5 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto';
+import { connect as netConnect, createServer as createNetServer, type AddressInfo, type Server as NetServer } from 'node:net';
+import type { Duplex } from 'node:stream';
 import { Server, utils, type Connection, type ServerChannel } from 'ssh2';
+import { serveSftp } from './sftpHandler';
 
 export interface FixtureOptions {
   password?: string;
@@ -7,6 +10,17 @@ export interface FixtureOptions {
   keyboardAnswer?: string;
   /** Host key in OpenSSH format; generated when omitted so that a restart can simulate a key change. */
   hostKey?: string;
+  /** Folder served through the SFTP subsystem; without it the server refuses SFTP. */
+  sftpRoot?: string;
+  exec?: (command: string) => { stdout?: string; code?: number };
+}
+
+function pipeTogether(a: Duplex, b: Duplex): void {
+  a.on('error', () => b.destroy());
+  b.on('error', () => a.destroy());
+  a.on('close', () => b.destroy());
+  b.on('close', () => a.destroy());
+  a.pipe(b).pipe(a);
 }
 
 export function generateOpenSshKey(passphrase?: string): { privateKey: string; publicKey: string } {
@@ -25,11 +39,15 @@ export class SshFixture {
   private server: Server | null = null;
   private connections = new Set<Connection>();
   port = 0;
+  /** Off behaves like a shell reading a password: input arrives and nothing comes back. */
+  echoInput = true;
   /** Everything the shell channel received, to prove that input arrived. */
   received = '';
   lastPty: { cols: number; rows: number } | null = null;
   lastWindow: { cols: number; rows: number } | null = null;
   openShells: ServerChannel[] = [];
+  /** Slows downloads down, to catch a transfer in flight. */
+  sftpReadDelayMs = 0;
 
   constructor(private readonly options: FixtureOptions) {
     this.hostKey = options.hostKey ?? generateOpenSshKey().privateKey;
@@ -74,6 +92,42 @@ export class SshFixture {
         ctx.reject(methods);
       });
       client.on('ready', () => {
+        client.on('tcpip', (accept, reject, info) => {
+          const socket = netConnect(info.destPort, info.destIP);
+          socket.once('error', () => reject?.());
+          socket.once('connect', () => {
+            socket.removeAllListeners('error');
+            pipeTogether(accept(), socket);
+          });
+        });
+        const forwards = new Map<number, NetServer>();
+        client.on('close', () => {
+          for (const listener of forwards.values()) listener.close();
+          forwards.clear();
+        });
+        client.on('request', (accept, reject, name, info) => {
+          if (name === 'tcpip-forward') {
+            const listener = createNetServer((socket) => {
+              const { remoteAddress, remotePort } = socket;
+              client.forwardOut(info.bindAddr, port(), remoteAddress ?? '', remotePort ?? 0, (error, channel) => {
+                if (error) socket.destroy();
+                else pipeTogether(channel, socket);
+              });
+            });
+            const port = (): number => (listener.address() as AddressInfo).port;
+            listener.once('error', () => reject?.());
+            listener.listen(info.bindPort, info.bindAddr, () => {
+              forwards.set(port(), listener);
+              accept?.(port());
+            });
+          } else if (name === 'cancel-tcpip-forward') {
+            forwards.get(info.bindPort)?.close();
+            forwards.delete(info.bindPort);
+            accept?.();
+          } else {
+            reject?.();
+          }
+        });
         client.on('session', (accept) => {
           const session = accept();
           session.on('pty', (acceptPty, _reject, info) => {
@@ -83,6 +137,25 @@ export class SshFixture {
           session.on('window-change', (acceptChange, _reject, info) => {
             this.lastWindow = { cols: info.cols, rows: info.rows };
             acceptChange?.();
+          });
+          session.on('sftp', (acceptSftp, reject) => {
+            if (!this.options.sftpRoot) {
+              reject?.();
+              return;
+            }
+            serveSftp(acceptSftp(), this.options.sftpRoot, { readDelayMs: () => this.sftpReadDelayMs });
+          });
+          session.on('exec', (acceptExec, reject, info) => {
+            const handler = this.options.exec;
+            if (!handler) {
+              reject?.();
+              return;
+            }
+            const channel = acceptExec();
+            const result = handler(info.command);
+            channel.write(result.stdout ?? '');
+            channel.exit(result.code ?? 0);
+            channel.close();
           });
           session.on('shell', (acceptShell) => {
             const channel = acceptShell();
@@ -94,7 +167,7 @@ export class SshFixture {
               const text = data.toString('utf8');
               this.received += text;
               typed += text;
-              channel.write(text);
+              if (this.echoInput) channel.write(text);
               if (typed.includes('exit')) {
                 channel.exit(7);
                 channel.close();

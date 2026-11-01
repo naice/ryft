@@ -1,8 +1,17 @@
+import { AiError } from '../ai/aiProvider';
+import { DockerError } from '../docker/dockerService';
+import { SessionLogError } from '../logging/sessionLogger';
 import { z } from 'zod';
 import type { InvokeChannel } from '@shared/channels';
 import { invokeInputSchemas, sendInputSchemas, type InvokeResult } from '@shared/contracts';
+import { ForwardConfigError } from '../forward/forwardManager';
+import { KeyManagerError } from '../keys/keyManager';
+import { WorkspaceFormatError } from '../workspaces/workspaceRepository';
 import { SessionAccessError } from '../sessions/sessionManager';
+import { SessionFailure } from '../sessions/types';
+import { FileAccessError } from '../sftp/localFs';
 import { NotFoundError } from '../storage/repositories';
+import { HostKeyChangeExpiredError } from '../security/hostKeyChanges';
 import { VaultUnavailableError } from '../security/secretVault';
 import { log } from '../logger';
 
@@ -39,7 +48,22 @@ export type SendHandlers = {
 };
 
 /** Messages safe to pass to the renderer unchanged. Everything else is logged and generalized. */
-const PUBLIC_ERRORS = [IpcValidationError, IpcSenderError, NotFoundError, SessionAccessError, VaultUnavailableError];
+const PUBLIC_ERRORS = [
+  IpcValidationError,
+  IpcSenderError,
+  NotFoundError,
+  SessionAccessError,
+  VaultUnavailableError,
+  FileAccessError,
+  ForwardConfigError,
+  HostKeyChangeExpiredError,
+  SessionFailure,
+  KeyManagerError,
+  WorkspaceFormatError,
+  DockerError,
+  AiError,
+  SessionLogError
+];
 
 /** The renderer's document is either the packaged file or, in development, the Vite server. */
 export function createSenderCheck(isTrustedUrl: (url: string) => boolean) {

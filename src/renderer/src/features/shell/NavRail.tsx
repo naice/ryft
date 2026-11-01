@@ -1,9 +1,15 @@
 import { useMemo, type ReactNode } from 'react';
 import {
   ArrowLeftRight,
+  Bot,
+  Braces,
   Clock3,
+  Container,
   FolderTree,
   FolderOpen,
+  KeyRound,
+  LayoutPanelTop,
+  ScrollText,
   Search,
   Settings,
   Star,
@@ -11,17 +17,42 @@ import {
   Boxes
 } from 'lucide-react';
 import { groupCounts } from '../../lib/hostFilter';
-import { useApp, type NavItem } from '../../state/appStore';
+import { useApp, type NavItem, type ToolView } from '../../state/appStore';
 import { useWorkspace } from '../../state/workspaceStore';
+import { useAi } from '../ai/aiStore';
+import { useForwards } from '../forwards/forwardStore';
+import { isFinishedJob, useSftp } from '../sftp/sftpStore';
 import { cx, IconButton, Tooltip } from '../../components/ui/primitives';
 import { HostsNavIcon, RyftGlyph, RyftWordmark } from '../../components/ui/icons';
 
 const ITEMS: { id: NavItem; label: string; icon: ReactNode }[] = [
   { id: 'hosts', label: 'Hosts', icon: <HostsNavIcon /> },
   { id: 'recent', label: 'Recent', icon: <Clock3 size={18} /> },
-  { id: 'starred', label: 'Starred', icon: <Star size={18} /> },
+  { id: 'starred', label: 'Favorites', icon: <Star size={18} /> },
   { id: 'groups', label: 'Groups', icon: <Boxes size={18} /> }
 ];
+
+const TOOLS: { id: ToolView; label: string; icon: ReactNode }[] = [
+  { id: 'workspaces', label: 'Workspaces', icon: <LayoutPanelTop size={18} /> },
+  { id: 'sftp', label: 'SFTP', icon: <FolderOpen size={18} /> },
+  { id: 'forwards', label: 'Port Forwarding', icon: <ArrowLeftRight size={18} /> },
+  { id: 'snippets', label: 'Snippets', icon: <Braces size={18} /> },
+  { id: 'keys', label: 'SSH Keys', icon: <KeyRound size={18} /> },
+  { id: 'docker', label: 'Docker', icon: <Container size={18} /> },
+  { id: 'logs', label: 'Sitzungsprotokolle', icon: <ScrollText size={18} /> }
+];
+
+function CountBadge({ count, label }: { count: number; label: string }) {
+  if (count === 0) return null;
+  return (
+    <span
+      aria-label={label}
+      className="min-w-5 flex-none rounded-full bg-selected-strong px-1.5 text-center text-[11px] leading-[18px] text-cyan"
+    >
+      {count}
+    </span>
+  );
+}
 
 function NavRow({
   label,
@@ -50,7 +81,7 @@ function NavRow({
       aria-label={compact || title ? (title ?? label) : undefined}
       onClick={onClick}
       className={cx(
-        'relative flex h-9 w-full flex-none items-center gap-2.5 rounded-control text-[13px] transition-colors duration-120',
+        'relative flex h-9 w-full flex-none items-center gap-2 rounded-control text-[13px] transition-colors duration-120',
         compact ? 'justify-center' : 'px-2.5',
         selected ? 'ryft-nav-selected text-text' : 'text-secondary',
         disabled ? 'opacity-45' : !selected && 'hover:bg-hover hover:text-text'
@@ -78,6 +109,11 @@ export function NavRail({ compact }: { compact: boolean }) {
   const setSettingsOpen = useApp((state) => state.setSettingsOpen);
   const isMac = useApp((state) => state.info?.platform === 'darwin');
   const counts = useMemo(() => groupCounts(hosts), [hosts]);
+  const showTerminals = useApp((state) => state.showTerminals);
+  const aiOpen = useAi((state) => state.open);
+  const setAiOpen = useAi((state) => state.setOpen);
+  const runningForwards = useForwards((state) => Object.values(state.runtime).filter((item) => item.status === 'running').length);
+  const activeTransfers = useSftp((state) => Object.values(state.jobs).filter((job) => !isFinishedJob(job)).length);
 
   const openLocal = () => {
     const { preferences } = useApp.getState();
@@ -105,7 +141,10 @@ export function NavRail({ compact }: { compact: boolean }) {
               aria-label="Hosts suchen"
               placeholder="Hosts suchen…"
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                showTerminals();
+              }}
               className="ryft-bare-input min-w-0 flex-1 truncate bg-transparent text-xs text-text select-text placeholder:text-subtle"
             />
             <button
@@ -120,7 +159,7 @@ export function NavRail({ compact }: { compact: boolean }) {
         </div>
       )}
 
-      <div className={cx('flex flex-col', compact ? 'px-2' : 'px-2.5')}>
+      <div className={cx('flex min-h-0 flex-col overflow-y-auto', compact ? 'px-2' : 'px-2.5')}>
         {ITEMS.map((item) => (
           <NavRow
             key={item.id}
@@ -131,15 +170,26 @@ export function NavRail({ compact }: { compact: boolean }) {
             onClick={() => setNav(item.id)}
           />
         ))}
-        <NavRow
-          label="Port Forwarding"
-          icon={<ArrowLeftRight size={18} />}
-          compact={compact}
-          disabled
-          title="Port Forwarding – Coming Soon"
-        />
-        <NavRow label="SFTP" icon={<FolderOpen size={18} />} compact={compact} disabled title="SFTP – Coming Soon" />
-        <NavRow label="Local Terminal" icon={<SquareTerminal size={18} />} compact={compact} onClick={openLocal} />
+        <NavRow label="Local Terminals" icon={<SquareTerminal size={18} />} compact={compact} onClick={openLocal} />
+        <div className="my-1.5 h-px flex-none bg-border" />
+        {TOOLS.map((item) => (
+          <NavRow
+            key={item.id}
+            label={item.label}
+            icon={item.icon}
+            compact={compact}
+            selected={nav === item.id}
+            onClick={() => setNav(item.id)}
+            trailing={
+              item.id === 'sftp' ? (
+                <CountBadge count={activeTransfers} label={`${activeTransfers} aktive Übertragungen`} />
+              ) : item.id === 'forwards' ? (
+                <CountBadge count={runningForwards} label={`${runningForwards} aktive Weiterleitungen`} />
+              ) : undefined
+            }
+          />
+        ))}
+        <NavRow label="AI Assistant" icon={<Bot size={18} />} compact={compact} selected={aiOpen} onClick={() => setAiOpen(!aiOpen)} />
       </div>
 
       {!compact && (
@@ -153,7 +203,10 @@ export function NavRail({ compact }: { compact: boolean }) {
                 icon={<FolderTree size={16} />}
                 compact={false}
                 selected={groupFilter === group.id}
-                onClick={() => setGroupFilter(groupFilter === group.id ? null : group.id)}
+                onClick={() => {
+                  setGroupFilter(groupFilter === group.id ? null : group.id);
+                  showTerminals();
+                }}
                 trailing={
                   <span className="min-w-5 flex-none rounded-full bg-raised px-1.5 text-center text-[11px] leading-[18px] text-secondary">
                     {counts.get(group.id) ?? 0}

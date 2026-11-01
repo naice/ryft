@@ -7,12 +7,19 @@ export function secretReference(hostId: string, kind: SecretKind): string {
   return `ryft-secret://host/${hostId}/${kind}`;
 }
 
+export type SecretScope = 'host' | 'profile' | 'key';
+
+export function scopedSecretReference(scope: SecretScope, id: string, kind: SecretKind): string {
+  return `ryft-secret://${scope}/${id}/${kind}`;
+}
+
 export interface SecretStore {
   status(): VaultStatus;
   get(reference: string): string | null;
   set(reference: string, value: string): void;
   delete(reference: string): void;
   has(reference: string): boolean;
+  discardUnreadable?(): number;
 }
 
 /** The subset of Electron's safeStorage we use: DPAPI on Windows, Keychain on macOS, libsecret/kwallet on Linux. */
@@ -23,6 +30,19 @@ export interface OsEncryption {
   getSelectedStorageBackend?(): string;
 }
 
+/**
+ * On Windows Chromium keeps its DPAPI-wrapped key in `Local State` and writes that file on a timer or
+ * at exit. Until it is there, a restart would create a new key and everything in the vault would be lost.
+ */
+export function isOsKeyOnDisk(localStatePath: string): boolean {
+  try {
+    const parsed = JSON.parse(readFileSync(localStatePath, 'utf8')) as { os_crypt?: { encrypted_key?: unknown } };
+    return typeof parsed.os_crypt?.encrypted_key === 'string';
+  } catch {
+    return false;
+  }
+}
+
 export class VaultUnavailableError extends Error {
   constructor() {
     super('Der Schlüsselbund des Betriebssystems ist nicht verfügbar. Secrets können nicht gespeichert werden.');
@@ -30,7 +50,14 @@ export class VaultUnavailableError extends Error {
   }
 }
 
-const vaultFileSchema = z.strictObject({ version: z.literal(1), entries: z.record(z.string(), z.string()) });
+const vaultFileSchema = z.strictObject({
+  version: z.literal(1),
+  entries: z.record(z.string(), z.string()),
+  /** A known value under the current key: tells "the OS key is gone" apart from a single damaged entry. */
+  canary: z.string().optional()
+});
+
+const CANARY_VALUE = 'ryft-vault-canary';
 
 /**
  * Stores secrets only as ciphertext protected by an OS-held key. Refuses to store when the OS
@@ -38,6 +65,7 @@ const vaultFileSchema = z.strictObject({ version: z.literal(1), entries: z.recor
  */
 export class OsSecretVault implements SecretStore {
   private entries: Record<string, string> = {};
+  private canary: string | undefined;
 
   constructor(
     private readonly filePath: string,
@@ -45,17 +73,53 @@ export class OsSecretVault implements SecretStore {
   ) {
     if (existsSync(filePath)) {
       const parsed = vaultFileSchema.safeParse(JSON.parse(readFileSync(filePath, 'utf8')));
-      if (parsed.success) this.entries = parsed.data.entries;
+      if (parsed.success) {
+        this.entries = parsed.data.entries;
+        this.canary = parsed.data.canary;
+      }
     }
   }
 
   status(): VaultStatus {
     const backend = this.encryption.getSelectedStorageBackend?.() ?? 'os';
-    return { available: this.encryption.isEncryptionAvailable() && backend !== 'basic_text', backend };
+    const available = this.encryption.isEncryptionAvailable() && backend !== 'basic_text';
+    return { available, backend, keyLost: available && this.isKeyLost() };
+  }
+
+  private isKeyLost(): boolean {
+    // Vaults from before the canary are judged by an entry, which is as good a witness.
+    const witness = this.canary ?? Object.values(this.entries)[0];
+    if (!witness) return false;
+    try {
+      this.encryption.decryptString(Buffer.from(witness, 'base64'));
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  /** The deliberate way out after losing the OS key: drops what can no longer be read. */
+  discardUnreadable(): number {
+    let removed = 0;
+    for (const [reference, encrypted] of Object.entries(this.entries)) {
+      try {
+        this.encryption.decryptString(Buffer.from(encrypted, 'base64'));
+      } catch {
+        delete this.entries[reference];
+        removed += 1;
+      }
+    }
+    this.canary = undefined;
+    this.persist();
+    return removed;
   }
 
   has(reference: string): boolean {
     return reference in this.entries;
+  }
+
+  isEmpty(): boolean {
+    return Object.keys(this.entries).length === 0;
   }
 
   get(reference: string): string | null {
@@ -70,7 +134,10 @@ export class OsSecretVault implements SecretStore {
   }
 
   set(reference: string, value: string): void {
-    if (!this.status().available) throw new VaultUnavailableError();
+    const status = this.status();
+    if (!status.available) throw new VaultUnavailableError();
+    // After a lost key the old canary stays, so that the state remains visible until it was dealt with.
+    if (!status.keyLost && !this.canary) this.canary = this.encryption.encryptString(CANARY_VALUE).toString('base64');
     this.entries[reference] = this.encryption.encryptString(value).toString('base64');
     this.persist();
   }
@@ -83,7 +150,7 @@ export class OsSecretVault implements SecretStore {
 
   private persist(): void {
     const temp = `${this.filePath}.tmp`;
-    writeFileSync(temp, JSON.stringify({ version: 1, entries: this.entries }), { mode: 0o600 });
+    writeFileSync(temp, JSON.stringify({ version: 1, entries: this.entries, canary: this.canary }), { mode: 0o600 });
     renameSync(temp, this.filePath);
     try {
       chmodSync(this.filePath, 0o600);

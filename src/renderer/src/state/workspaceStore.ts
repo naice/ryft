@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Channels } from '@shared/channels';
-import type { LayoutNode, SessionError, SessionPrompt, SessionTarget, WorkspaceLayout } from '@shared/contracts';
+import type { LayoutNode, SessionError, SessionPrompt, SessionTarget, WorkspaceDefinition, WorkspaceLayout } from '@shared/contracts';
+import { WORKSPACE_VERSION } from '@shared/features/workspaces';
 import { isSessionActive, type SessionState } from '@shared/sessionState';
 import { api, errorMessage } from '../lib/api';
 import {
@@ -11,6 +12,7 @@ import {
   removePane,
   setRatioAt,
   splitPane,
+  withFreshIds,
   type SplitDirection
 } from '../lib/layoutTree';
 import {
@@ -36,6 +38,8 @@ export interface PaneRuntime {
   error: SessionError | null;
   exitCode: number | null;
   attempt: number | null;
+  /** The hop of a jump chain being connected. */
+  detail?: string | null;
 }
 
 const IDLE: PaneRuntime = { state: 'disconnected', error: null, exitCode: null, attempt: null };
@@ -50,6 +54,10 @@ interface WorkspaceState {
   chooser: { split: { paneId: string; direction: SplitDirection } | null } | null;
 
   restore(layout: WorkspaceLayout | null): void;
+  /** Adds the tabs of a saved workspace behind the open ones; running sessions are not touched. */
+  openWorkspace(definition: WorkspaceDefinition, connect: boolean): void;
+  /** The open tabs in the form a workspace stores them. Startup commands need a fresh approval. */
+  currentDefinition(): WorkspaceDefinition;
   openTab(target: SessionTarget): void;
   /** Focuses a pane already showing the host, or opens a new tab for it. */
   connectHost(hostId: string): void;
@@ -78,6 +86,27 @@ function paneRunning(runtime: PaneRuntime | undefined): boolean {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Panes whose startup commands the user released by opening an approved workspace. It lives only in
+ * memory, so that a layout restored after a restart can never run anything by itself.
+ */
+const startupPending = new Set<string>();
+
+/** SFTP panes and tunnels ask for credentials too, without being a pane. */
+const promptContexts = new Set<string>();
+
+export function registerPromptContext(id: string): void {
+  promptContexts.add(id);
+}
+
+export function unregisterPromptContext(id: string): void {
+  promptContexts.delete(id);
+  const { prompts } = useWorkspace.getState();
+  if (prompts.some((prompt) => prompt.sessionId === id)) {
+    useWorkspace.setState({ prompts: prompts.filter((prompt) => prompt.sessionId !== id) });
+  }
+}
+
 export const useWorkspace = create<WorkspaceState>((set, get) => {
   const closePanes = (ids: string[]): void => {
     const panes = { ...get().panes };
@@ -87,6 +116,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       }
       setTerminalLive(id, false);
       disposeTerminal(id);
+      startupPending.delete(id);
       delete panes[id];
     }
     set({
@@ -183,7 +213,64 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       });
     },
 
+    openWorkspace(definition, connect) {
+      useApp.getState().showTerminals();
+      const added: WorkspaceTab[] = [];
+      const panes = { ...get().panes };
+      let activeTabId: string | null = null;
+      for (const saved of definition.layout.tabs) {
+        const ids = new Map<string, string>();
+        const root = withFreshIds(saved.root, ids);
+        const created = collectPanes(root);
+        const tab: WorkspaceTab = {
+          id: crypto.randomUUID(),
+          root,
+          activePaneId: ids.get(saved.activePaneId) ?? (created[0] as { id: string }).id
+        };
+        for (const item of created) {
+          panes[item.id] = IDLE;
+          ensureTerminal(item.id);
+          if (definition.startupApproved && item.startupCommands?.length) startupPending.add(item.id);
+        }
+        added.push(tab);
+        if (saved.id === definition.layout.activeTabId) activeTabId = tab.id;
+      }
+      if (added.length === 0) return;
+      set({
+        tabs: [...get().tabs, ...added],
+        panes,
+        activeTabId: activeTabId ?? (added[0] as WorkspaceTab).id,
+        chooser: null,
+        maximizedPaneId: null
+      });
+      get().commitLayout();
+      const app = useApp.getState();
+      if (definition.hostPanelWidth !== null && definition.hostPanelWidth !== app.preferences?.hostPanelWidth) {
+        void app.setPreferences({ hostPanelWidth: definition.hostPanelWidth }).catch(() => undefined);
+      }
+      requestAnimationFrame(() => {
+        for (const tab of added) {
+          for (const item of collectPanes(tab.root)) {
+            fitTerminal(item.id);
+            if (connect) get().connectPane(item.id);
+          }
+        }
+        focusActivePane();
+      });
+    },
+
+    currentDefinition() {
+      const { tabs, activeTabId } = get();
+      return {
+        version: WORKSPACE_VERSION,
+        layout: { tabs: tabs.slice(0, 64), activeTabId },
+        hostPanelWidth: useApp.getState().preferences?.hostPanelWidth ?? null,
+        startupApproved: false
+      };
+    },
+
     openTab(target) {
+      useApp.getState().showTerminals();
       const id = crypto.randomUUID();
       addPaneRuntime(id);
       const tab: WorkspaceTab = { id: crypto.randomUUID(), root: pane(id, target), activePaneId: id };
@@ -225,6 +312,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
         set({ chooser: { split: { paneId: tab.activePaneId, direction } } });
         return;
       }
+      useApp.getState().showTerminals();
       const id = crypto.randomUUID();
       addPaneRuntime(id);
       set({
@@ -245,6 +333,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     activateTab(id) {
+      useApp.getState().showTerminals();
       set({ activeTabId: id, maximizedPaneId: null });
       get().commitLayout();
       const tab = get().tabs.find((item) => item.id === id);
@@ -329,7 +418,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       clearTerminal(id);
       setTerminalLive(id, true);
       const { cols, rows } = terminalSize(id);
-      api.invoke(Channels.sessionsOpen, { sessionId: id, target: node.target, cols, rows }).catch((error: unknown) => {
+      const startup = startupPending.has(id) ? (node.startupCommands ?? []) : [];
+      const launch = node.cwd || startup.length > 0 ? { launch: { cwd: node.cwd ?? null, startupCommands: startup } } : {};
+      api.invoke(Channels.sessionsOpen, { sessionId: id, target: node.target, cols, rows, ...launch }).catch((error: unknown) => {
         setTerminalLive(id, false);
         const message = errorMessage(error);
         set({ panes: { ...get().panes, [id]: { ...IDLE, state: 'failed', error: { code: 'UNKNOWN', message } } } });
@@ -345,6 +436,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
       setTerminalLive(sessionId, isSessionActive(runtime.state));
       set({ panes: { ...get().panes, [sessionId]: runtime } });
       if (runtime.state === 'connected') {
+        startupPending.delete(sessionId);
         fitTerminal(sessionId);
       }
       if (runtime.state === 'connected' || runtime.state === 'failed' || runtime.state === 'closed') {
@@ -360,7 +452,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => {
     },
 
     onPrompt(prompt) {
-      if (get().panes[prompt.sessionId]) set({ prompts: [...get().prompts, prompt] });
+      if (get().panes[prompt.sessionId] || promptContexts.has(prompt.sessionId)) set({ prompts: [...get().prompts, prompt] });
     },
 
     resolvePrompt(promptId) {

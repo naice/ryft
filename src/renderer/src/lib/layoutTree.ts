@@ -54,6 +54,16 @@ export function clampRatio(ratio: number): number {
   return Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
 }
 
+/** A copy with new pane ids, for opening a saved layout next to tabs that may stem from the same one. */
+export function withFreshIds(node: LayoutNode, ids: Map<string, string>): LayoutNode {
+  if (node.type === 'split') {
+    return { ...node, first: withFreshIds(node.first, ids), second: withFreshIds(node.second, ids) };
+  }
+  const id = crypto.randomUUID();
+  ids.set(node.id, id);
+  return { ...node, id };
+}
+
 /** The next pane in reading order, used to move focus after a close and for keyboard cycling. */
 export function neighborPane(node: LayoutNode, id: string, offset: 1 | -1): PaneNode | null {
   const panes = collectPanes(node);

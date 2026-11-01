@@ -1,3 +1,4 @@
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
@@ -19,8 +20,9 @@ import { createDispatcher, createSenderCheck, type IpcCaller } from './ipc/regis
 import { configureLogFile, log } from './logger';
 import { detectShells } from './pty/shells';
 import { defaultSshDirectory } from './security/knownHosts';
-import { OsSecretVault } from './security/secretVault';
+import { isOsKeyOnDisk, OsSecretVault } from './security/secretVault';
 import { createServices, type Services } from './services';
+import { FileAccessError } from './sftp/localFs';
 import { openDatabase } from './storage/database';
 
 const devServerUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined;
@@ -29,6 +31,11 @@ const rendererFileUrl = pathToFileURL(rendererFile).href;
 
 let mainWindow: BrowserWindow | null = null;
 let services: Services | null = null;
+let secretVault: OsSecretVault | null = null;
+let quitAfterKeyWait = false;
+
+/** Longer than Chromium's commit interval for prefs. */
+const KEY_WAIT_MS = 15_000;
 
 function isTrustedRendererUrl(url: string): boolean {
   if (devServerUrl) return url.startsWith(devServerUrl);
@@ -74,14 +81,14 @@ function createWindow(): BrowserWindow {
 
   const ownerId = window.webContents.id;
   window.on('closed', () => {
-    services?.sessions.disposeOwner(ownerId);
+    services?.disposeOwner(ownerId);
     mainWindow = null;
   });
   // A reloaded or crashed renderer has lost its panes, so nothing could ever close their sessions again.
   window.webContents.on('did-start-navigation', (details) => {
-    if (details.isMainFrame && !details.isSameDocument) services?.sessions.disposeOwner(ownerId);
+    if (details.isMainFrame && !details.isSameDocument) services?.disposeOwner(ownerId);
   });
-  window.webContents.on('render-process-gone', () => services?.sessions.disposeOwner(ownerId));
+  window.webContents.on('render-process-gone', () => services?.disposeOwner(ownerId));
 
   if (devServerUrl) void window.loadURL(devServerUrl);
   else void window.loadFile(rendererFile);
@@ -108,15 +115,25 @@ function bootstrap(): void {
     decryptString: (encrypted) => safeStorage.decryptString(encrypted),
     getSelectedStorageBackend: process.platform === 'linux' ? () => safeStorage.getSelectedStorageBackend() : undefined
   });
+  secretVault = vault;
 
   services = createServices({
     db,
+    dataDirectory: userData,
     secretStore: vault,
     shells,
     sink: {
       data: (event) => sendToWindow(EventChannels.sessionData, event),
       state: (event) => sendToWindow(EventChannels.sessionState, event),
-      prompt: (event) => sendToWindow(EventChannels.sessionPrompt, event)
+      prompt: (event) => sendToWindow(EventChannels.sessionPrompt, event),
+      sftpClosed: (event) => sendToWindow(EventChannels.sftpClosed, event),
+      transferUpdate: (jobs) => sendToWindow(EventChannels.transferUpdate, jobs),
+      transferRemoved: (ids) => sendToWindow(EventChannels.transferRemoved, ids),
+      forwardState: (runtime) => sendToWindow(EventChannels.forwardState, runtime),
+      dockerLog: (event) => sendToWindow(EventChannels.dockerLog, event),
+      dockerLogEnd: (event) => sendToWindow(EventChannels.dockerLogEnd, event),
+      aiChunk: (event) => sendToWindow(EventChannels.aiChunk, event),
+      sessionLogState: (event) => sendToWindow(EventChannels.sessionLogState, event)
     }
   });
 
@@ -129,6 +146,50 @@ function bootstrap(): void {
         properties: ['openFile', 'showHiddenFiles']
       });
       return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+    pickFolder: async () => {
+      if (!mainWindow) return null;
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: 'Lokalen Ordner auswählen',
+        properties: ['openDirectory', 'showHiddenFiles']
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+    confirmDroppedPaths: async (paths) => {
+      if (!mainWindow) return false;
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        title: 'Zugriff erlauben',
+        message: 'RYFT auf diese Pfade zugreifen lassen?',
+        detail: paths.join('\n'),
+        buttons: ['Erlauben', 'Abbrechen'],
+        defaultId: 1,
+        cancelId: 1
+      });
+      return result.response === 0;
+    },
+    saveTextFile: async ({ title, defaultName, extension, content }) => {
+      if (!mainWindow) return false;
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title,
+        defaultPath: defaultName,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }]
+      });
+      if (result.canceled || !result.filePath) return false;
+      await writeFile(result.filePath, content, 'utf8');
+      return true;
+    },
+    openTextFile: async ({ title, extension, maxBytes }) => {
+      if (!mainWindow) return null;
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title,
+        filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+        properties: ['openFile']
+      });
+      const path = result.canceled ? undefined : result.filePaths[0];
+      if (!path) return null;
+      if ((await stat(path)).size > maxBytes) throw new FileAccessError('Die Datei ist zu groß.');
+      return readFile(path, 'utf8');
     },
     readClipboard: () => clipboard.readText(),
     writeClipboard: (text) => clipboard.writeText(text),
@@ -203,5 +264,22 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin') app.quit();
   });
 
-  app.on('before-quit', () => services?.sessions.disposeAll());
+  app.on('before-quit', () => services?.disposeAll());
+
+  // Secrets are only as durable as the key protecting them, so the process stays until that key is on disk.
+  app.on('will-quit', (event) => {
+    if (quitAfterKeyWait || process.platform !== 'win32' || !secretVault || secretVault.isEmpty()) return;
+    const localState = join(app.getPath('userData'), 'Local State');
+    if (isOsKeyOnDisk(localState)) return;
+    event.preventDefault();
+    quitAfterKeyWait = true;
+    const giveUpAt = Date.now() + KEY_WAIT_MS;
+    const timer = setInterval(() => {
+      const stored = isOsKeyOnDisk(localState);
+      if (!stored && Date.now() < giveUpAt) return;
+      clearInterval(timer);
+      if (!stored) log.warn('OS key was not written before quitting; stored secrets may need re-entering');
+      app.quit();
+    }, 250);
+  });
 }

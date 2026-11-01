@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Channels } from '@shared/channels';
 import type {
   AppInfo,
+  AuthProfile,
   Group,
   HistoryEntry,
   Host,
@@ -13,7 +14,14 @@ import type {
 import type { HostSegment } from '../lib/hostFilter';
 import { api, errorMessage } from '../lib/api';
 
-export type NavItem = 'hosts' | 'recent' | 'starred' | 'groups' | 'local';
+/** Views that replace the host column and terminals, which keep running hidden behind them. */
+export const TOOL_VIEWS = ['workspaces', 'sftp', 'forwards', 'snippets', 'keys', 'docker', 'logs'] as const;
+export type ToolView = (typeof TOOL_VIEWS)[number];
+export type NavItem = 'hosts' | 'recent' | 'starred' | 'groups' | 'local' | ToolView;
+
+export function isToolView(nav: NavItem): nav is ToolView {
+  return (TOOL_VIEWS as readonly string[]).includes(nav);
+}
 
 export interface Toast {
   id: number;
@@ -38,6 +46,7 @@ interface AppState {
   history: HistoryEntry[];
   shells: ShellInfo[];
   vault: VaultStatus;
+  authProfiles: AuthProfile[];
   preferences: Preferences | null;
 
   nav: NavItem;
@@ -54,6 +63,10 @@ interface AppState {
 
   load(): Promise<void>;
   refreshHistory(): Promise<void>;
+  refreshAuthProfiles(): Promise<void>;
+  refreshVault(): Promise<void>;
+  /** Leaves a tool view, so that a session being opened is actually visible. */
+  showTerminals(): void;
   setNav(nav: NavItem): void;
   setQuery(query: string): void;
   setSegment(segment: HostSegment): void;
@@ -90,7 +103,8 @@ export const useApp = create<AppState>((set, get) => ({
   groups: [],
   history: [],
   shells: [],
-  vault: { available: false, backend: '' },
+  vault: { available: false, backend: '', keyLost: false },
+  authProfiles: [],
   preferences: null,
 
   nav: 'hosts',
@@ -107,16 +121,17 @@ export const useApp = create<AppState>((set, get) => ({
 
   async load() {
     try {
-      const [info, hosts, groups, history, shells, vault, preferences] = await Promise.all([
+      const [info, hosts, groups, history, shells, vault, preferences, authProfiles] = await Promise.all([
         api.invoke(Channels.appInfo),
         api.invoke(Channels.hostsList),
         api.invoke(Channels.groupsList),
         api.invoke(Channels.historyList, { limit: 30 }),
         api.invoke(Channels.shellsList),
         api.invoke(Channels.secretsStatus),
-        api.invoke(Channels.prefsGet)
+        api.invoke(Channels.prefsGet),
+        api.invoke(Channels.authProfilesList)
       ]);
-      set({ info, hosts, groups, history, shells, vault, preferences, ready: true });
+      set({ info, hosts, groups, history, shells, vault, preferences, authProfiles, ready: true });
     } catch (error) {
       set({ loadError: errorMessage(error) });
     }
@@ -124,6 +139,18 @@ export const useApp = create<AppState>((set, get) => ({
 
   async refreshHistory() {
     set({ history: await api.invoke(Channels.historyList, { limit: 30 }) });
+  },
+
+  async refreshAuthProfiles() {
+    set({ authProfiles: await api.invoke(Channels.authProfilesList) });
+  },
+
+  async refreshVault() {
+    set({ vault: await api.invoke(Channels.secretsStatus) });
+  },
+
+  showTerminals() {
+    if (isToolView(get().nav)) set({ nav: 'hosts' });
   },
 
   setNav: (nav) => set({ nav, segment: nav === 'starred' ? 'favorites' : nav === 'groups' ? 'groups' : 'all', groupFilter: null }),

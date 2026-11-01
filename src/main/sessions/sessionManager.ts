@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
-import type { PromptResponse, SessionError, SessionTarget } from '@shared/contracts';
+import type { PromptResponse, SessionError, SessionLaunch, SessionTarget } from '@shared/contracts';
 import { SessionStateMachine, type SessionState } from '@shared/sessionState';
 import { log } from '../logger';
 import type { AdapterEnd, PromptRequest, Prompter, SessionAdapter, SessionEventSink } from './types';
@@ -21,9 +21,25 @@ export class SessionAccessError extends Error {
 
 export interface SessionManagerDeps {
   sink: SessionEventSink;
-  createAdapter(target: SessionTarget, prompt: Prompter): SessionAdapter;
-  autoReconnectEnabled(): boolean;
+  createAdapter(
+    target: SessionTarget,
+    prompt: Prompter,
+    onDetail: (detail: string) => void,
+    launch: SessionLaunch | null
+  ): SessionAdapter;
+  /** Asked at the moment they would run, not when the session was requested. */
+  startupCommandsAllowed?(): boolean;
+  autoReconnectEnabled(target: SessionTarget): boolean;
+  /** How the bytes of a session map to characters; UTF-8 unless a host says otherwise. */
+  encodingOf?(target: SessionTarget): 'utf8' | 'latin1';
   reconnectDelaysMs?: readonly number[];
+  /** Sees what a session displays and how it changes state, never what is typed into it. */
+  observer?: {
+    connected(sessionId: string, target: SessionTarget): void;
+    output(sessionId: string, text: string): void;
+    state(sessionId: string, state: SessionState): void;
+    ended(sessionId: string): void;
+  };
   history?: {
     start(target: SessionTarget): string | null;
     outcome(id: string, outcome: 'connected' | 'failed'): void;
@@ -50,6 +66,9 @@ interface ManagedSession {
   attempt: number;
   promptIds: Set<string>;
   historyId: string | null;
+  launch: SessionLaunch | null;
+  /** Startup commands belong to the first connection. A reconnect must not repeat them. */
+  startupDone: boolean;
 }
 
 interface PendingPrompt {
@@ -68,7 +87,14 @@ export class SessionManager {
 
   constructor(private readonly deps: SessionManagerDeps) {}
 
-  async open(ownerId: number, sessionId: string, target: SessionTarget, cols: number, rows: number): Promise<void> {
+  async open(
+    ownerId: number,
+    sessionId: string,
+    target: SessionTarget,
+    cols: number,
+    rows: number,
+    launch: SessionLaunch | null = null
+  ): Promise<void> {
     const existing = this.sessions.get(sessionId);
     if (existing) {
       if (existing.ownerId !== ownerId) throw new SessionAccessError();
@@ -93,7 +119,9 @@ export class SessionManager {
       reconnectTimer: null,
       attempt: 0,
       promptIds: new Set(),
-      historyId: null
+      historyId: null,
+      launch,
+      startupDone: false
     };
     this.sessions.set(sessionId, session);
     await this.connect(session);
@@ -106,6 +134,7 @@ export class SessionManager {
     this.flush(session);
     this.teardown(session);
     this.transition(session, 'closed', {});
+    this.deps.observer?.ended(sessionId);
     this.sessions.delete(sessionId);
   }
 
@@ -136,6 +165,29 @@ export class SessionManager {
     this.prompts.delete(promptId);
     this.sessions.get(pending.sessionId)?.promptIds.delete(promptId);
     pending.resolve(response);
+  }
+
+  /** Prompts for connections that belong to no pane, such as SFTP or a tunnel. */
+  createPrompter(ownerId: number, contextId: string): Prompter {
+    return (request: PromptRequest) =>
+      new Promise<PromptResponse>((resolve) => {
+        const promptId = randomUUID();
+        this.prompts.set(promptId, { sessionId: contextId, ownerId, resolve });
+        this.deps.sink.prompt({ ...request, promptId, sessionId: contextId } as Parameters<SessionEventSink['prompt']>[0]);
+      });
+  }
+
+  cancelContext(contextId: string): void {
+    for (const [promptId, pending] of [...this.prompts]) {
+      if (pending.sessionId !== contextId) continue;
+      this.prompts.delete(promptId);
+      pending.resolve({ kind: 'cancel' });
+    }
+  }
+
+  /** The target of a session of this owner, for features acting on a running session. */
+  targetOf(ownerId: number, sessionId: string): SessionTarget {
+    return this.authorized(ownerId, sessionId).target;
   }
 
   stateOf(sessionId: string): SessionState | null {
@@ -179,13 +231,28 @@ export class SessionManager {
 
     let adapter: SessionAdapter;
     try {
-      adapter = this.deps.createAdapter(session.target, this.prompterFor(session));
+      adapter = this.deps.createAdapter(
+        session.target,
+        this.prompterFor(session),
+        (detail) => {
+          if (session.generation !== generation) return;
+          this.deps.sink.state({
+            sessionId: session.id,
+            state: session.machine.state,
+            error: null,
+            exitCode: null,
+            attempt: null,
+            detail
+          });
+        },
+        session.launch
+      );
     } catch (error) {
       this.failed(session, toSessionError(error));
       return;
     }
     session.adapter = adapter;
-    session.decoder = new StringDecoder('utf8');
+    session.decoder = new StringDecoder(this.deps.encodingOf?.(session.target) ?? 'utf8');
     session.unacked = 0;
     session.paused = false;
     const current = (): boolean => session.generation === generation && this.sessions.get(session.id) === session;
@@ -220,9 +287,16 @@ export class SessionManager {
     if (!current()) return;
     session.attempt = 0;
     this.transition(session, 'connected', {});
+    this.deps.observer?.connected(session.id, session.target);
     if (session.historyId) this.deps.history?.outcome(session.historyId, 'connected');
     // The window may have changed while connecting.
     adapter.resize(session.cols, session.rows);
+    if (!session.startupDone) {
+      session.startupDone = true;
+      if (this.deps.startupCommandsAllowed?.()) {
+        for (const command of session.launch?.startupCommands ?? []) adapter.write(`${command}\r`);
+      }
+    }
   }
 
   private handleEnd(session: ManagedSession, end: AdapterEnd): void {
@@ -232,10 +306,11 @@ export class SessionManager {
     if (end.kind === 'exit') {
       this.finishHistory(session);
       this.transition(session, 'closed', { exitCode: end.code });
+      this.deps.observer?.ended(session.id);
       this.sessions.delete(session.id);
       return;
     }
-    if (this.deps.autoReconnectEnabled() && session.target.kind === 'ssh') {
+    if (session.target.kind === 'ssh' && this.deps.autoReconnectEnabled(session.target)) {
       this.scheduleReconnect(session, end.error);
     } else {
       this.failed(session, end.error);
@@ -275,6 +350,7 @@ export class SessionManager {
     extras: { error?: SessionError; exitCode?: number | null; attempt?: number }
   ): void {
     session.machine.transition(state);
+    this.deps.observer?.state(session.id, state);
     this.deps.sink.state({
       sessionId: session.id,
       state,
@@ -285,8 +361,10 @@ export class SessionManager {
   }
 
   private enqueue(session: ManagedSession, data: string | Buffer): void {
-    const text = typeof data === 'string' ? data : session.decoder.write(data);
+    const decoded = typeof data === 'string' ? data : session.decoder.write(data);
+    const text = session.adapter?.filterOutput ? session.adapter.filterOutput(decoded) : decoded;
     if (!text) return;
+    this.deps.observer?.output(session.id, text);
     session.buffer += text;
     session.unacked += text.length;
     if (!session.paused && session.unacked >= HIGH_WATER_MARK) {

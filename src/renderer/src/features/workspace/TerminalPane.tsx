@@ -6,18 +6,25 @@ import {
   Loader2,
   Maximize2,
   Minimize2,
+  Circle,
   Plug,
+  RadioTower,
   RefreshCw,
   Rows2,
   ShieldAlert,
   X
 } from 'lucide-react';
 import { ContextMenu } from 'radix-ui';
-import type { SessionTarget } from '@shared/contracts';
+import { Channels } from '@shared/channels';
+import type { Host, SessionTarget } from '@shared/contracts';
+import { flattenJumpChain } from '@shared/features/jumpChain';
 import { isSessionActive, type SessionState } from '@shared/sessionState';
-import { useApp } from '../../state/appStore';
+import { api } from '../../lib/api';
+import { attempt as guarded, useApp } from '../../state/appStore';
 import { IDLE_PANE, useWorkspace } from '../../state/workspaceStore';
 import { Button, cx, IconButton } from '../../components/ui/primitives';
+import { useBroadcast } from '../broadcast/broadcastStore';
+import { useSessionLogs } from '../logs/logStore';
 import { attachTerminal, copyFrom, fitTerminal, hasSelection, pasteInto } from '../terminal/terminalRegistry';
 
 const STATE_LABEL: Record<SessionState, string> = {
@@ -48,7 +55,14 @@ function StatusIcon({ state }: { state: SessionState }) {
   }
 }
 
-export function usePaneLabel(target: SessionTarget): { title: string; kindLabel: string; detail: string } {
+/** The hops in connection order, for showing which way a session takes. */
+function jumpRouteOf(hostId: string, hosts: Host[]): string {
+  const chain = flattenJumpChain(hostId, (id) => hosts.find((item) => item.id === id)?.options.jumpHostIds ?? null);
+  if (!chain.ok) return '';
+  return chain.hops.slice(0, -1).map((id) => hosts.find((item) => item.id === id)?.name ?? 'Gelöschter Host').join(' → ');
+}
+
+export function usePaneLabel(target: SessionTarget): { title: string; kindLabel: string; detail: string; route?: string } {
   const host = useApp((state) =>
     target.kind === 'ssh' ? state.hosts.find((item) => item.id === target.hostId) : undefined
   );
@@ -57,12 +71,22 @@ export function usePaneLabel(target: SessionTarget): { title: string; kindLabel:
     const id = target.shellId ?? state.preferences?.defaultShellId;
     return state.shells.find((item) => item.id === id) ?? state.shells[0];
   });
+  const route = useApp((state) => (target.kind === 'ssh' ? jumpRouteOf(target.hostId, state.hosts) : ''));
+  const defaultDistro = useApp((state) => state.preferences?.wslDefaultDistro ?? null);
   if (target.kind === 'local') return { title: shell?.label ?? 'Lokal', kindLabel: 'Lokal', detail: 'Lokale Shell' };
+  if (target.kind === 'wsl') {
+    const distro = target.distro ?? defaultDistro ?? 'Standard';
+    return { title: distro, kindLabel: 'WSL', detail: `WSL-Distribution ${distro}` };
+  }
+  if (target.kind === 'docker') {
+    return { title: target.containerName, kindLabel: 'Docker', detail: `Container ${target.containerId.slice(0, 12)} im Kontext ${target.endpoint.context}` };
+  }
   if (!host) return { title: 'Gelöschter Host', kindLabel: 'SSH', detail: 'Dieser Host existiert nicht mehr' };
   return {
     title: host.name,
     kindLabel: 'SSH',
-    detail: `${host.username}@${host.hostname}${host.port === 22 ? '' : `:${host.port}`}`
+    detail: `${host.username}@${host.hostname}${host.port === 22 ? '' : `:${host.port}`}`,
+    route
   };
 }
 
@@ -70,6 +94,7 @@ function PaneOverlay({ id, target, title }: { id: string; target: SessionTarget;
   const runtime = useWorkspace((state) => state.panes[id] ?? IDLE_PANE);
   const connectPane = useWorkspace((state) => state.connectPane);
   const requestClosePane = useWorkspace((state) => state.requestClosePane);
+  const askConfirm = useApp((store) => store.askConfirm);
   const { state, error, exitCode, attempt } = runtime;
   if (state === 'connected') return null;
 
@@ -78,11 +103,12 @@ function PaneOverlay({ id, target, title }: { id: string; target: SessionTarget;
   let body: string | null = null;
   switch (state) {
     case 'disconnected':
-      headline = target.kind === 'ssh' ? `Nicht mit ${title} verbunden` : 'Lokale Shell nicht gestartet';
+      headline = target.kind === 'ssh' ? `Nicht mit ${title} verbunden` : target.kind === 'local' ? 'Lokale Shell nicht gestartet' : `${title} nicht gestartet`;
       break;
     case 'connecting':
     case 'authenticating':
       headline = STATE_LABEL[state];
+      body = runtime.detail ?? null;
       break;
     case 'reconnecting':
       headline = `Verbindung verloren, Versuch ${attempt ?? 1}…`;
@@ -98,6 +124,24 @@ function PaneOverlay({ id, target, title }: { id: string; target: SessionTarget;
       break;
   }
   const busy = state === 'connecting' || state === 'authenticating' || state === 'reconnecting';
+  // A key from ~/.ssh/known_hosts is never changed by RYFT, so only its own decisions can be replaced here.
+  const change = blocked && error?.hostKeyChange?.source === 'ryft' ? error.hostKeyChange : null;
+
+  const replaceKey = () => {
+    if (!change?.changeId) return;
+    const { changeId } = change;
+    askConfirm({
+      title: `Host-Schlüssel von ${change.host}:${change.port} ersetzen?`,
+      message: `Bisher: ${change.expectedFingerprint}\nNeu: ${change.presentedFingerprint}\n\nEin geänderter Schlüssel kann bedeuten, dass jemand die Verbindung abfängt. Ersetze ihn nur, wenn du den neuen Fingerprint auf einem anderen Weg geprüft hast.`,
+      confirmLabel: 'Schlüssel ersetzen',
+      danger: true,
+      onConfirm: () =>
+        void guarded(async () => {
+          await api.invoke(Channels.knownHostsAcceptChange, { changeId });
+          connectPane(id);
+        })
+    });
+  };
 
   // Output of the ended session stays readable behind the banner, so it sits at the bottom.
   return (
@@ -125,6 +169,11 @@ function PaneOverlay({ id, target, title }: { id: string; target: SessionTarget;
                   {state === 'disconnected' ? 'Verbinden' : 'Erneut verbinden'}
                 </Button>
               )}
+              {change?.changeId && (
+                <Button variant="danger" className="!h-7 text-xs" onClick={replaceKey}>
+                  Schlüssel ersetzen
+                </Button>
+              )}
               <Button className="!h-7 text-xs" onClick={() => requestClosePane(id)}>
                 Schließen
               </Button>
@@ -146,8 +195,11 @@ export function TerminalPane({ id, target, tabId }: { id: string; target: Sessio
   const requestClosePane = useWorkspace((store) => store.requestClosePane);
   const splitActive = useWorkspace((store) => store.splitActive);
   const disconnectPane = useWorkspace((store) => store.disconnectPane);
-  const { title, kindLabel, detail } = usePaneLabel(target);
+  const { title, kindLabel, detail, route } = usePaneLabel(target);
   const remote = target.kind === 'ssh';
+  const broadcasting = useBroadcast((store) => store.targets.includes(id));
+  const recording = useSessionLogs((store) => store.recording[id] ?? false);
+  const setRecording = useSessionLogs((store) => store.setRecording);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -176,10 +228,11 @@ export function TerminalPane({ id, target, tabId }: { id: string; target: Sessio
       data-testid="terminal-pane"
       data-pane-id={id}
       data-active={active}
+      data-broadcast={broadcasting}
       onMouseDownCapture={() => focusPane(id)}
       className={cx(
         'flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-card border bg-terminal transition-colors duration-120',
-        active ? 'border-border-active' : remote ? 'border-pane-border-remote' : 'border-pane-border-local'
+        broadcasting ? 'border-warning' : active ? 'border-border-active' : remote ? 'border-pane-border-remote' : 'border-pane-border-local'
       )}
     >
       <header className="flex h-[30px] flex-none items-center gap-2 border-b border-border bg-pane-header pr-1 pl-2.5">
@@ -188,8 +241,24 @@ export function TerminalPane({ id, target, tabId }: { id: string; target: Sessio
           {title}
         </span>
         <span className={cx('flex-none text-[11px]', remote ? 'text-[var(--ryft-purple)]' : 'text-cyan')}>{kindLabel}</span>
-        <span className="min-w-0 truncate text-[11px] text-secondary">— {STATE_LABEL[state]}</span>
+        <span className="min-w-0 truncate text-[11px] text-secondary" data-testid="pane-route" title={route ? `Über ${route}` : undefined}>
+          — {STATE_LABEL[state]}
+          {route ? ` · über ${route}` : ''}
+        </span>
         <div className="flex-1" />
+        {broadcasting && (
+          <span data-testid="pane-broadcast" className="flex flex-none items-center gap-1 text-[11px] font-medium text-warning">
+            <RadioTower size={12} /> Broadcast
+          </span>
+        )}
+        <IconButton
+          label={recording ? 'Aufzeichnung beenden' : 'Sitzung aufzeichnen'}
+          size={22}
+          disabled={!isSessionActive(state)}
+          onClick={() => void guarded(() => setRecording(id, !recording))}
+        >
+          <Circle size={12} data-testid="pane-rec" data-recording={recording} className={recording ? 'fill-error text-error' : undefined} />
+        </IconButton>
         <IconButton label="Rechts teilen" shortcut="Ctrl+Shift+D" size={22} onClick={() => split('row')}>
           <Columns2 size={13} />
         </IconButton>

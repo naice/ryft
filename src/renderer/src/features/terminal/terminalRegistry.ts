@@ -32,6 +32,12 @@ export interface TerminalCallbacks {
 const entries = new Map<string, TerminalEntry>();
 let callbacks: TerminalCallbacks | null = null;
 let preferences: Preferences | null = null;
+let keyMirror: ((sourceId: string, data: string) => void) | null = null;
+
+/** Repeats key presses elsewhere. Pastes and the terminal's own replies to programs are not key presses, so they stay put. */
+export function setKeyMirror(mirror: ((sourceId: string, data: string) => void) | null): void {
+  keyMirror = mirror;
+}
 
 export function configureTerminals(next: TerminalCallbacks): void {
   callbacks = next;
@@ -82,6 +88,38 @@ export async function pasteInto(id: string): Promise<void> {
   if (text) entry.terminal.paste(text);
 }
 
+export type InsertResult = 'ok' | 'not-live' | 'alternate-screen' | 'multiline-unsafe';
+
+/** Why text cannot go into this terminal right now, or 'ok'. */
+export function insertProblem(id: string, text: string): InsertResult {
+  const entry = entries.get(id);
+  if (!entry?.live) return 'not-live';
+  // A full-screen program would read the text as key presses.
+  if (entry.terminal.buffer.active.type === 'alternate') return 'alternate-screen';
+  // Without bracketed paste, every line break would already run what stands before it.
+  if (/[\r\n]/.test(text.replace(/[\r\n]+$/, '')) && !entry.terminal.modes.bracketedPasteMode) return 'multiline-unsafe';
+  return 'ok';
+}
+
+/** Puts a command on the prompt. It only runs with `execute`, which is for callers that showed it and asked first. */
+export function insertCommand(id: string, text: string, execute: boolean): InsertResult {
+  const problem = insertProblem(id, text);
+  const entry = entries.get(id);
+  if (problem !== 'ok' || !entry) return problem;
+  entry.terminal.paste(text.replace(/[\r\n]+$/, ''));
+  if (execute) api.writeSession(id, '\r');
+  return 'ok';
+}
+
+export function isAlternateScreen(id: string): boolean {
+  return entries.get(id)?.terminal.buffer.active.type === 'alternate';
+}
+
+/** Read only when someone asks to attach it. */
+export function selectionOf(id: string): string {
+  return entries.get(id)?.terminal.getSelection() ?? '';
+}
+
 export function copyFrom(id: string): Promise<void> {
   const entry = entries.get(id);
   return entry ? copySelection(entry) : Promise.resolve();
@@ -128,6 +166,9 @@ export function ensureTerminal(id: string): TerminalEntry {
   });
   terminal.onData((data) => {
     if (entry.live) api.writeSession(id, data);
+  });
+  terminal.onKey(({ key }) => {
+    if (entry.live) keyMirror?.(id, key);
   });
   terminal.onBinary((data) => {
     if (entry.live) api.writeSession(id, data);

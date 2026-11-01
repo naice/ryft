@@ -14,6 +14,7 @@ import {
 } from '../../src/main/security/knownHosts';
 import {
   HostSecrets,
+  isOsKeyOnDisk,
   OsSecretVault,
   secretReference,
   VaultUnavailableError,
@@ -233,3 +234,21 @@ function writeAndRead(file: string): string {
   writeFileSync(file, '', { flag: 'a' });
   return readFileSync(file, 'utf8');
 }
+
+describe('OS key persistence', () => {
+  it('only counts a Local State which really holds the key', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ryft-key-'));
+    const file = join(dir, 'Local State');
+    try {
+      expect(isOsKeyOnDisk(file)).toBe(false);
+      writeFileSync(file, '{"os_crypt":{}}');
+      expect(isOsKeyOnDisk(file)).toBe(false);
+      writeFileSync(file, 'not json');
+      expect(isOsKeyOnDisk(file)).toBe(false);
+      writeFileSync(file, '{"os_crypt":{"encrypted_key":"abc"}}');
+      expect(isOsKeyOnDisk(file)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

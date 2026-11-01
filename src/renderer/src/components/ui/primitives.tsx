@@ -1,4 +1,4 @@
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 import { Dialog as RadixDialog, Tooltip as RadixTooltip } from 'radix-ui';
 import { useApp } from '../../state/appStore';
@@ -75,6 +75,9 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
     </RadixTooltip.Root>
   );
 }
+
+export const TEXTAREA =
+  'ryft-bare-input w-full resize-y rounded-control border border-border bg-canvas px-2.5 py-1.5 font-terminal text-xs text-text select-text focus:border-border-active';
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(
   { className, ...props },
@@ -199,6 +202,11 @@ export function Modal({
   children: ReactNode;
   dismissable?: boolean;
 }) {
+  const returnFocus = useRef<Element | null>(null);
+  const wasOpen = useRef(false);
+  if (open && !wasOpen.current) returnFocus.current = document.activeElement;
+  wasOpen.current = open;
+
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
@@ -206,19 +214,29 @@ export function Modal({
         <RadixDialog.Content
           style={{ width }}
           {...(description ? {} : { 'aria-describedby': undefined })}
+          onOpenAutoFocus={(event) => {
+            // Focusing the close button would open its tooltip, and the first Escape would only close that.
+            event.preventDefault();
+            (event.target as HTMLElement).focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            // Whatever the dialog led to, such as a new terminal, may have taken the focus already.
+            if (document.activeElement === document.body && returnFocus.current instanceof HTMLElement) returnFocus.current.focus();
+          }}
           onInteractOutside={(event) => {
             if (!dismissable) event.preventDefault();
           }}
           onEscapeKeyDown={(event) => {
             if (!dismissable) event.preventDefault();
           }}
-          className="ryft-anim-pop fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-48px)] max-w-[calc(100vw-48px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-panel border border-border bg-host-panel shadow-float"
+          className="ryft-anim-pop fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100vh-48px)] ryft-bare-input max-w-[calc(100vw-48px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-panel border border-border bg-host-panel shadow-float"
         >
           <div className="flex items-start gap-3 px-5 pt-4 pb-3">
             <div className="min-w-0 flex-1">
               <RadixDialog.Title className="text-base font-semibold text-text">{title}</RadixDialog.Title>
               {description && (
-                <RadixDialog.Description className="mt-1 text-[13px] text-secondary">
+                <RadixDialog.Description className="mt-1 text-[13px] break-words whitespace-pre-line text-secondary">
                   {description}
                 </RadixDialog.Description>
               )}

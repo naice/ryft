@@ -1,15 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import {
+  DEFAULT_HOST_OPTIONS,
   DEFAULT_PREFERENCES,
   preferencesSchema,
+  type AuthProfile,
+  type AuthProfileInput,
+  type ForwardInput,
+  type ForwardProfile,
   type Group,
   type HistoryEntry,
   type Host,
   type HostInput,
+  type HostOptions,
   type KnownHostEntry,
   type Preferences
 } from '@shared/contracts';
+import { hostOptionsSchema } from '@shared/features/hostOptions';
 
 export class NotFoundError extends Error {
   constructor(entity: string) {
@@ -33,10 +40,27 @@ interface HostRow {
   favorite: number;
   createdAt: string;
   updatedAt: string;
+  authProfileId: string | null;
+  options: string;
+}
+
+/** Options stored by another version may not validate; the connection then falls back to the defaults. */
+function parseHostOptions(raw: string): HostOptions {
+  try {
+    const parsed = hostOptionsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : DEFAULT_HOST_OPTIONS;
+  } catch {
+    return DEFAULT_HOST_OPTIONS;
+  }
 }
 
 function toHost(row: HostRow): StoredHost {
-  return { ...row, tags: JSON.parse(row.tags) as string[], favorite: row.favorite === 1 };
+  return {
+    ...row,
+    tags: JSON.parse(row.tags) as string[],
+    favorite: row.favorite === 1,
+    options: parseHostOptions(row.options)
+  };
 }
 
 export class HostRepository {
@@ -58,8 +82,8 @@ export class HostRepository {
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO hosts (id, name, hostname, port, username, authMethod, keyReference, groupId, tags, favorite, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO hosts (id, name, hostname, port, username, authMethod, keyReference, groupId, tags, favorite, createdAt, updatedAt, authProfileId, options)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         id,
@@ -73,7 +97,9 @@ export class HostRepository {
         JSON.stringify(input.tags),
         input.favorite ? 1 : 0,
         now,
-        now
+        now,
+        input.authProfileId,
+        JSON.stringify(input.options)
       );
     return this.get(id);
   }
@@ -82,7 +108,7 @@ export class HostRepository {
     const result = this.db
       .prepare(
         `UPDATE hosts SET name = ?, hostname = ?, port = ?, username = ?, authMethod = ?, keyReference = ?,
-         groupId = ?, tags = ?, favorite = ?, updatedAt = ? WHERE id = ?`
+         groupId = ?, tags = ?, favorite = ?, updatedAt = ?, authProfileId = ?, options = ? WHERE id = ?`
       )
       .run(
         input.name,
@@ -95,6 +121,8 @@ export class HostRepository {
         JSON.stringify(input.tags),
         input.favorite ? 1 : 0,
         new Date().toISOString(),
+        input.authProfileId,
+        JSON.stringify(input.options),
         id
       );
     if (result.changes === 0) throw new NotFoundError('Host');
@@ -115,6 +143,11 @@ export class HostRepository {
   }
 
   /** Copies metadata only: stored secrets belong to the original host. */
+  find(id: string): StoredHost | null {
+    const row = this.db.prepare('SELECT * FROM hosts WHERE id = ?').get(id) as HostRow | undefined;
+    return row ? toHost(row) : null;
+  }
+
   duplicate(id: string): StoredHost {
     const source = this.get(id);
     return this.create({
@@ -126,7 +159,9 @@ export class HostRepository {
       keyReference: source.keyReference,
       groupId: source.groupId,
       tags: source.tags,
-      favorite: false
+      favorite: false,
+      authProfileId: source.authProfileId,
+      options: source.options
     });
   }
 }
@@ -274,5 +309,160 @@ export class TrustedHostKeyRepository {
 
   remove(id: string): void {
     this.db.prepare('DELETE FROM trustedHostKeys WHERE id = ?').run(id);
+  }
+
+  /** The deliberate replacement after the user confirmed a changed key. */
+  replace(entry: { host: string; port: number; keyType: string; keyBase64: string; fingerprint: string }): void {
+    this.db
+      .prepare('DELETE FROM trustedHostKeys WHERE host = ? AND port = ? AND keyType = ?')
+      .run(entry.host.toLowerCase(), entry.port, entry.keyType);
+    this.add(entry);
+  }
+}
+
+export type StoredAuthProfile = Omit<AuthProfile, 'hasStoredSecret' | 'usedByHosts'>;
+
+export class AuthProfileRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  list(): StoredAuthProfile[] {
+    return this.db
+      .prepare('SELECT * FROM authProfiles ORDER BY name COLLATE NOCASE')
+      .all() as unknown as StoredAuthProfile[];
+  }
+
+  find(id: string): StoredAuthProfile | null {
+    return (this.db.prepare('SELECT * FROM authProfiles WHERE id = ?').get(id) as unknown as StoredAuthProfile) ?? null;
+  }
+
+  get(id: string): StoredAuthProfile {
+    const profile = this.find(id);
+    if (!profile) throw new NotFoundError('Anmeldeprofil');
+    return profile;
+  }
+
+  usedByHosts(id: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM hosts WHERE authProfileId = ?').get(id) as {
+      count: number;
+    };
+    return row.count;
+  }
+
+  create(input: AuthProfileInput): StoredAuthProfile {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO authProfiles (id, name, method, username, keyReference, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(id, input.name, input.method, input.username, input.keyReference, now, now);
+    return this.get(id);
+  }
+
+  update(id: string, input: AuthProfileInput): StoredAuthProfile {
+    const result = this.db
+      .prepare('UPDATE authProfiles SET name = ?, method = ?, username = ?, keyReference = ?, updatedAt = ? WHERE id = ?')
+      .run(input.name, input.method, input.username, input.keyReference, new Date().toISOString(), id);
+    if (result.changes === 0) throw new NotFoundError('Anmeldeprofil');
+    return this.get(id);
+  }
+
+  /** Hosts using the profile fall back to their own settings (ON DELETE SET NULL). */
+  delete(id: string): void {
+    const result = this.db.prepare('DELETE FROM authProfiles WHERE id = ?').run(id);
+    if (result.changes === 0) throw new NotFoundError('Anmeldeprofil');
+  }
+}
+
+interface ForwardRow extends Omit<ForwardProfile, 'restoreOnStart' | 'autoReconnect' | 'allowNonLoopback'> {
+  restoreOnStart: number;
+  autoReconnect: number;
+  allowNonLoopback: number;
+}
+
+function toForward(row: ForwardRow): ForwardProfile {
+  return {
+    ...row,
+    restoreOnStart: row.restoreOnStart === 1,
+    autoReconnect: row.autoReconnect === 1,
+    allowNonLoopback: row.allowNonLoopback === 1
+  };
+}
+
+export class ForwardRepository {
+  constructor(private readonly db: DatabaseSync) {}
+
+  list(): ForwardProfile[] {
+    const rows = this.db.prepare('SELECT * FROM forwardProfiles ORDER BY name COLLATE NOCASE').all();
+    return (rows as unknown as ForwardRow[]).map(toForward);
+  }
+
+  get(id: string): ForwardProfile {
+    const row = this.db.prepare('SELECT * FROM forwardProfiles WHERE id = ?').get(id) as ForwardRow | undefined;
+    if (!row) throw new NotFoundError('Port-Weiterleitung');
+    return toForward(row);
+  }
+
+  create(input: ForwardInput): ForwardProfile {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO forwardProfiles (id, name, hostId, type, bindAddress, bindPort, destHost, destPort,
+           restoreOnStart, autoReconnect, allowNonLoopback, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.name,
+        input.hostId,
+        input.type,
+        input.bindAddress,
+        input.bindPort,
+        input.destHost,
+        input.destPort,
+        input.restoreOnStart ? 1 : 0,
+        input.autoReconnect ? 1 : 0,
+        input.allowNonLoopback ? 1 : 0,
+        now,
+        now
+      );
+    return this.get(id);
+  }
+
+  update(id: string, input: ForwardInput): ForwardProfile {
+    const result = this.db
+      .prepare(
+        `UPDATE forwardProfiles SET name = ?, hostId = ?, type = ?, bindAddress = ?, bindPort = ?, destHost = ?,
+           destPort = ?, restoreOnStart = ?, autoReconnect = ?, allowNonLoopback = ?, updatedAt = ? WHERE id = ?`
+      )
+      .run(
+        input.name,
+        input.hostId,
+        input.type,
+        input.bindAddress,
+        input.bindPort,
+        input.destHost,
+        input.destPort,
+        input.restoreOnStart ? 1 : 0,
+        input.autoReconnect ? 1 : 0,
+        input.allowNonLoopback ? 1 : 0,
+        new Date().toISOString(),
+        id
+      );
+    if (result.changes === 0) throw new NotFoundError('Port-Weiterleitung');
+    return this.get(id);
+  }
+
+  delete(id: string): void {
+    this.db.prepare('DELETE FROM forwardProfiles WHERE id = ?').run(id);
+  }
+
+  countForHost(hostId: string): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS count FROM forwardProfiles WHERE hostId = ?').get(hostId) as {
+      count: number;
+    };
+    return row.count;
   }
 }

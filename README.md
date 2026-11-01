@@ -4,7 +4,7 @@
 
 <h1 align="center">RYFT</h1>
 
-<p align="center"><strong>One Terminal. Every System.</strong><br />Desktop-App für SSH-Sitzungen und lokale Terminals.</p>
+<p align="center"><strong>One Terminal. Every System.</strong><br />Desktop-App für SSH, SFTP, Tunnel, lokale Terminals, Docker und WSL.</p>
 
 <p align="center">
   <a href="https://github.com/naice/ryft/actions/workflows/release.yml"><img src="https://github.com/naice/ryft/actions/workflows/release.yml/badge.svg" alt="Release-Status" /></a>
@@ -31,28 +31,39 @@
 
 ## Funktionen
 
-**Hosts**
+Die Bedienung erklärt das [Benutzerhandbuch](docs/USER_GUIDE.md).
 
-- Hosts anlegen, bearbeiten und durchsuchen, mit Gruppen, Tags und Favoriten
-- Ansichten für zuletzt verwendete Hosts, Favoriten und Gruppen
+**Hosts und SSH**
 
-**SSH**
-
+- Hosts mit Gruppen, Tags und Favoriten, dazu Ansichten für zuletzt verwendete Hosts und Favoriten
 - Anmeldung per Agent, Schlüsseldatei (auch mit Passphrase), Passwort und Keyboard-Interactive
-- Host-Key-Prüfung mit Fingerprint; ein geänderter Schlüssel blockiert die Verbindung
-- Klare Zustände für jede Sitzung, verständliche Fehlermeldungen und erneutes Verbinden
+- Wiederverwendbare Anmeldeprofile und erweiterte Optionen wie Proxy, Keepalive und Umgebungsvariablen
+- Host-Key-Prüfung mit Fingerprint; ein geänderter Schlüssel blockiert die Verbindung, bis du ihn bewusst ersetzt
+- Sprunghosts über mehrere Stationen, mit eigener Host-Key-Prüfung für jede Station
 
-**Lokale Terminals**
+**Dateien und Tunnel**
 
-- Installierte Shells werden erkannt, auf Windows zum Beispiel PowerShell, Eingabeaufforderung, Git Bash und WSL
+- SFTP mit zwei Bereichen, Drag and Drop, Warteschlange, Abbrechen und Wiederholen
+- Port Forwarding lokal, remote und dynamisch, als Profile
 
 **Arbeitsbereich**
 
-- Tabs und frei teilbare Bereiche, deren Layout einen Neustart übersteht
-- Befehlspalette und Tastaturkürzel
-- Themes und Terminal-Einstellungen, darunter Schrift und Renderer (WebGL oder DOM)
+- Tabs und frei teilbare Bereiche, Befehlspalette, Themes und Terminal-Einstellungen
+- Workspaces, die Layout, Hosts und Ordner speichern, auch als Export ohne Geheimnisse
+- Snippets mit Parametern, Vorschau und Ausführung auf ausgewählten Sitzungen
+- Durchsuchbarer Befehlsverlauf und Vorschläge, abschaltbar und mit Ausschlussregeln
+- Broadcast an ausgewählte Sitzungen, mit dauerhafter Warnung und sofortigem Abschalten
+- Sitzungsprotokolle, ab Werk aus, mit Suche, Export und Aufbewahrungsgrenzen
 
-**Noch nicht enthalten:** SFTP, Port Forwarding und KI-Funktionen. Die Einträge sind deaktiviert und als „Coming Soon" markiert.
+**Schlüssel**
+
+- ED25519-Schlüssel erzeugen oder importieren, Hosts zuweisen und auf Servern eintragen
+
+**Entwicklerwerkzeuge**
+
+- Lokale Terminals mit erkannten Shells und WSL-Distributionen
+- Docker: Container verwalten, Logs live verfolgen und Shells öffnen, lokal oder in WSL
+- KI-Assistent mit lokalem Ollama, ab Werk aus; Vorschläge laufen nie ohne deine Bestätigung
 
 ## Screenshots
 
@@ -64,8 +75,18 @@
 | **Einstellungen** | **Verbindungsfehler** |
 | ![Leerer Zustand ohne Hosts](docs/screenshots/empty-state.png) | ![Schmales Fenster mit eingeklappter Navigation](docs/screenshots/workspace-1000x680-rail.png) |
 | **Erster Start** | **Schmales Fenster** |
+| ![SFTP mit zwei Dateibereichen](docs/screenshots/sftp.png) | ![Port-Forwarding-Profile und aktive Tunnel](docs/screenshots/port-forwarding.png) |
+| **SFTP** | **Port Forwarding** |
+| ![Gespeicherte Workspaces](docs/screenshots/workspaces.png) | ![Snippets mit Parametern](docs/screenshots/snippets.png) |
+| **Workspaces** | **Snippets** |
+| ![Verwaltete SSH-Schlüssel mit Fingerprint](docs/screenshots/ssh-keys.png) | ![Docker-Container mit Live-Logs](docs/screenshots/docker.png) |
+| **SSH Keys** | **Docker** |
+| ![KI-Assistent mit Antwort und Befehlsvorschlag](docs/screenshots/ai-assistant.png) | ![Broadcast mit Warnleiste und markierten Zielen](docs/screenshots/broadcast.png) |
+| **KI-Assistent** | **Broadcast** |
+| ![Liste der Sitzungsprotokolle](docs/screenshots/session-logs.png) | |
+| **Sitzungsprotokolle** | |
 
-Die Bilder stammen aus der echten App und werden mit `npm run screenshots` erzeugt. Die Hostnamen sind Beispiele aus den Dokumentations-Adressbereichen. Der Verbindungsfehler entsteht durch einen echten abgelehnten Verbindungsversuch auf 127.0.0.1.
+Die Bilder stammen aus der echten App und werden mit `npm run screenshots` erzeugt. Die Hostnamen sind Beispiele aus den Dokumentations-Adressbereichen. Der Verbindungsfehler entsteht durch einen echten abgelehnten Verbindungsversuch auf 127.0.0.1. Zwei Bilder nutzen Testdaten: Die Docker-Ansicht zeigt Demo-Container aus `e2e/dockerStub.ts`, der KI-Assistent spricht mit einem lokalen Testserver statt mit einem echten Modell.
 
 ## Installation
 
@@ -105,7 +126,16 @@ npm run dev
 
 Den Test des gepackten Programms startest du nach `npm run package:dir` mit `npx playwright test --project=packaged`.
 
-Die Tests verwenden nie echte Hosts. `tests/fixtures/sshServer.ts` ist ein SSH-Server im Testprozess auf 127.0.0.1 mit echten Handshakes. Die E2E-Tests laufen mit einem temporären Profil und eigenem `HOME`, damit deine Schlüssel und `known_hosts` außen vor bleiben.
+Die Standardtests verwenden nie echte Hosts. `tests/fixtures/sshServer.ts` ist ein SSH-Server im Testprozess auf 127.0.0.1 mit echten Handshakes. Die E2E-Tests laufen mit einem temporären Profil und eigenem `HOME`, damit deine Schlüssel und `known_hosts` außen vor bleiben.
+
+Tests gegen echte Dienste laufen nur, wenn du die passende Umgebungsvariable setzt. Richte sie nur auf Umgebungen, die du entbehren kannst:
+
+| Variable | Test |
+| --- | --- |
+| `RYFT_TEST_OPENSSH=<Host>:<Port>:<Benutzer>:<Schlüssel>:<Ordner>` | `tests/real` gegen einen Wegwerf-sshd, den zum Beispiel `tests/fixtures/wsl-openssh.sh` startet |
+| `RYFT_TEST_WSL=<Distribution>` | WSL-Tests |
+| `RYFT_TEST_DOCKER_WSL=<Distribution>`, `RYFT_TEST_DOCKER_IMAGE=<Image>` | Docker-Tests mit einem eigenen, markierten Container |
+| `RYFT_TEST_OLLAMA_URL=<Adresse>` | Ollama: Modellliste und eine sofort abgebrochene Anfrage |
 
 ## Tastaturkürzel
 
@@ -119,6 +149,8 @@ Auf macOS steht Cmd anstelle von Ctrl. Ausnahme: Der Tab-Wechsel nutzt überall 
 | Ctrl+Shift+D / Ctrl+Shift+E | Rechts / unten teilen |
 | Ctrl+Tab / Ctrl+Shift+Tab | Nächster / vorheriger Tab |
 | Ctrl+Alt+Pfeiltasten | Bereich wechseln |
+| Ctrl+Shift+Space | Vorschläge aus Verlauf und Snippets |
+| Ctrl+Shift+B | Broadcast starten oder sofort beenden |
 
 **Konflikt mit der Shell:** Ctrl+K, Ctrl+T und Ctrl+W haben in vielen Shells eine eigene Bedeutung. Wenn du sie dort brauchst, schalte unter Einstellungen → Terminal „App-Kürzel im Terminal abfangen" aus. Die Shift-Varianten funktionieren immer.
 
@@ -132,11 +164,16 @@ Auf macOS steht Cmd anstelle von Ctrl. Ausnahme: Der Tab-Wechsel nutzt überall 
 
 - **Renderer gilt als nicht vertrauenswürdig:** `contextIsolation` an, `nodeIntegration` aus, schmale typisierte Preload-Brücke, Validierung aller IPC-Eingaben mit zod im Hauptprozess und eine strikte CSP.
 - **Secrets:** Passwörter und Passphrasen werden nur auf Wunsch gespeichert und mit Electron `safeStorage` verschlüsselt (DPAPI, Keychain, libsecret/kwallet). Bietet Linux keinen echten Schlüsselbund (`basic_text`), speichert RYFT nichts und fragt stattdessen bei jeder Verbindung nach.
-- **Schlüssel:** In SQLite steht nur der Pfad zur Schlüsseldatei, nie ihr Inhalt.
-- **Host-Keys:** Die Prüfung lässt sich nicht abschalten. `~/.ssh/known_hosts` wird nur gelesen, eigene Vertrauensentscheidungen liegen in der App-Datenbank.
-- **Sitzungen:** Sie laufen im Hauptprozess und enden, wenn der Renderer neu lädt oder abstürzt. Beim Start wird nichts automatisch verbunden.
+- **Schlüssel:** In SQLite steht nur der Pfad zur Schlüsseldatei, nie ihr Inhalt. Private Schlüssel werden nicht angezeigt und nie überschrieben.
+- **Host-Keys:** Die Prüfung lässt sich nicht abschalten und gilt für jede Station einer Sprunghost-Kette einzeln. `~/.ssh/known_hosts` wird nur gelesen, eigene Vertrauensentscheidungen liegen in der App-Datenbank.
+- **Sitzungen:** Sie laufen im Hauptprozess und enden, wenn der Renderer neu lädt oder abstürzt. Beim Start verbindet RYFT nur Tunnelprofile, bei denen du das Wiederherstellen eingeschaltet hast.
+- **Workspaces:** Gespeicherte Startbefehle laufen erst, wenn du das in den Einstellungen erlaubst. Exporte enthalten keine Geheimnisse.
+- **KI-Assistent:** Ab Werk aus und nur mit lokalen oder privaten Adressen nutzbar. Das Modell erhält nur Text, den du schreibst oder ausdrücklich anhängst. Seine Antworten gelten als nicht vertrauenswürdig, und Befehle laufen erst nach deiner Bestätigung des genauen Wortlauts.
+- **Docker:** Befehle laufen als Argumentlisten mit geprüften Bezeichnern. Unverschlüsselte TCP-Kontexte zu anderen Rechnern nutzt RYFT nicht.
+- **Sitzungsprotokolle:** Ab Werk aus und ohne Tastatureingaben. Sie liegen unverschlüsselt im Datenordner und können Geheimnisse enthalten, die eine Sitzung ausgibt oder als Echo zeigt. Auch der Befehlsverlauf ist unverschlüsselt.
+- **Broadcast:** Ziele wählst du ausdrücklich, und neue Sitzungen kommen nie von selbst dazu.
 
-Schwachstellen meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
+Die Details stehen in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Schwachstellen meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
 
 ## Fehlerbehebung
 
@@ -158,20 +195,22 @@ Schwachstellen meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
 | macOS Apple Silicon | Nur automatischer Starttest des gepackten Programms in GitHub Actions |
 | Linux x64 | Nur automatischer Starttest des gepackten Programms in GitHub Actions |
 
-Auf allen Plattformen läuft SSH bisher nur gegen den Testserver im Testprozess. Gegen einen echten OpenSSH-Server und einen echten System-Agenten wurde RYFT noch nicht getestet.
+SSH, SFTP, Tunnel und Sprunghosts liefen von Windows aus gegen einen echten OpenSSH-Server in WSL. Docker, WSL und Ollama liefen unter Windows gegen echte Installationen. Die Docker-Oberfläche selbst wird in den E2E-Tests mit Demodaten geprüft.
+
+**Nicht getestet:** ein echter System-Agent, das Eintragen eines Schlüssels auf einem echten OpenSSH-Server, der Befehlsverlauf für zsh sowie alle Funktionen unter Linux und macOS außer dem Starttest. Docker und WSL prüft RYFT zur Laufzeit und zeigt sie als nicht verfügbar an, wenn sie fehlen.
 
 ## Aufbau
 
 ```
-src/main       Hauptprozess: SQLite, Secrets, SSH, PTY, Sitzungen, IPC
+src/main       Hauptprozess: SQLite, Secrets, SSH, SFTP, Tunnel, PTY, Docker, WSL, KI, Protokolle, IPC
 src/preload    Typisierte Brücke zum Renderer
 src/renderer   React-Oberfläche
 src/shared     Verträge und Zustandsmodell für beide Seiten
-tests          Unit-, Integrationstests und SSH-Fixture
+tests          Unit-, Integrationstests, Tests gegen echte Dienste und Fixtures
 e2e            Playwright gegen die echte App
 scripts        Pre-Push-Prüfung der Dokumentation
 reference      Designkit und visuelle Referenz
-docs           Screenshots und Fortschrittslog
+docs           Handbuch, Architektur, Changelog, Release Notes, Fortschritt, Screenshots
 ```
 
 Designwerte stehen als Tokens in `src/renderer/src/styles/themes.css`. Komponenten enthalten keine Farbwerte, das prüft ein Unit-Test. Einzige Ausnahme ist die Datei `terminalTheme.ts`, weil xterm konkrete Farben braucht.

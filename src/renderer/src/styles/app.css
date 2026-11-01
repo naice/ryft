@@ -74,6 +74,12 @@ body {
   outline-offset: 1px;
 }
 
+/* Large scrolling areas: a thin line inside instead of the heavy ring around them. */
+.ryft-focus-inset:focus-visible {
+  outline: 1px solid var(--ryft-focus);
+  outline-offset: -1px;
+}
+
 /* Sits inside a field that shows focus itself, or a ring would be drawn around just the text. */
 .ryft-bare-input:focus-visible {
   outline: none;

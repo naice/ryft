@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import { Channels, EventChannels, SendChannels, type InvokeChannel } from '@shared/channels';
 import type { RyftApi } from '@shared/contracts';
 
@@ -21,7 +21,16 @@ const api: RyftApi = {
   onSessionData: (listener) => subscribe(EventChannels.sessionData, listener),
   onSessionState: (listener) => subscribe(EventChannels.sessionState, listener),
   onSessionPrompt: (listener) => subscribe(EventChannels.sessionPrompt, listener),
-  onWindowMaximized: (listener) => subscribe(EventChannels.windowMaximized, listener)
+  onWindowMaximized: (listener) => subscribe(EventChannels.windowMaximized, listener),
+  onSftpClosed: (listener) => subscribe(EventChannels.sftpClosed, listener),
+  onTransferUpdate: (listener) => subscribe(EventChannels.transferUpdate, listener),
+  onTransferRemoved: (listener) => subscribe(EventChannels.transferRemoved, listener),
+  onForwardState: (listener) => subscribe(EventChannels.forwardState, listener),
+  onDockerLog: (listener) => subscribe(EventChannels.dockerLog, listener),
+  onDockerLogEnd: (listener) => subscribe(EventChannels.dockerLogEnd, listener),
+  onAiChunk: (listener) => subscribe(EventChannels.aiChunk, listener),
+  onSessionLogState: (listener) => subscribe(EventChannels.sessionLogState, listener),
+  pathForDroppedFile: (file) => webUtils.getPathForFile(file)
 };
 
 contextBridge.exposeInMainWorld('ryft', api);

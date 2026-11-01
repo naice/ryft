@@ -7,7 +7,9 @@ export type ShortcutAction =
   | 'nextTab'
   | 'previousTab'
   | 'nextPane'
-  | 'previousPane';
+  | 'previousPane'
+  | 'suggest'
+  | 'broadcast';
 
 export interface KeyLike {
   key: string;
@@ -44,6 +46,10 @@ export function resolveShortcut(event: KeyLike, isMac: boolean, capturePlain: bo
         return 'localTerminal';
       case 'w':
         return 'closeTab';
+      case ' ':
+        return 'suggest';
+      case 'b':
+        return 'broadcast';
       default:
         return null;
     }

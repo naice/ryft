@@ -1,16 +1,26 @@
-import type { SessionError, SessionPrompt, PromptResponse, SessionStateEvent, SessionDataEvent } from '@shared/contracts';
+import type {
+  HostKeyChange,
+  SessionError,
+  SessionPrompt,
+  PromptResponse,
+  SessionStateEvent,
+  SessionDataEvent
+} from '@shared/contracts';
 
 export class SessionFailure extends Error {
   constructor(
     readonly code: SessionError['code'],
-    message: string
+    message: string,
+    readonly hostKeyChange?: HostKeyChange
   ) {
     super(message);
     this.name = 'SessionFailure';
   }
 
   toSessionError(): SessionError {
-    return { code: this.code, message: this.message };
+    const error: SessionError = { code: this.code, message: this.message };
+    if (this.hostKeyChange) error.hostKeyChange = this.hostKeyChange;
+    return error;
   }
 }
 
@@ -33,6 +43,8 @@ export interface SessionAdapter {
   pause(): void;
   resume(): void;
   dispose(): void;
+  /** Sees decoded output before anything else does, and may remove what is not meant for the terminal. */
+  filterOutput?(text: string): string;
 }
 
 export type PromptRequest = SessionPrompt extends infer P

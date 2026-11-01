@@ -204,6 +204,8 @@ test('after a restart the metadata is back and no secret is anywhere on disk', a
   expect(filesBelow(profile).some((file) => file.endsWith('secrets.vault.json'))).toBe(true);
 
   await open(await launchApp({ profile, width: 1440, height: 900 }));
+  const vaultStatus = await page.evaluate(() => (window.ryft.invoke as (c: string) => Promise<unknown>)('secrets:status'));
+  expect(vaultStatus).toMatchObject({ available: true, keyLost: false });
   await expect(page.getByTestId('host-row').filter({ hasText: 'fixture-host' })).toBeVisible();
   await expect(page.getByRole('navigation').getByText('Fixtures')).toBeVisible();
 
@@ -229,4 +231,22 @@ test('a changed host key blocks the connection and offers no way around it', asy
   await expect(status).toContainText('Verbindung blockiert');
   await expect(status.getByRole('button', { name: /verbinden/i })).toHaveCount(0);
   expect(fixture.received).toBe('');
+});
+
+test('a changed host key is replaced only by a deliberate, confirmed decision', async () => {
+  const status = paneWithText('fixture-host').first().getByTestId('pane-status');
+  await status.getByRole('button', { name: 'Schlüssel ersetzen' }).click();
+  const confirm = page.getByRole('dialog');
+  await expect(confirm).toContainText(fingerprintOf(fixture.hostKey));
+  await confirm.getByRole('button', { name: 'Abbrechen' }).click();
+  await expect(status).toHaveAttribute('data-state', 'failed');
+  expect(fixture.received).toBe('');
+
+  await status.getByRole('button', { name: 'Schlüssel ersetzen' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Schlüssel ersetzen' }).click();
+  const pane = paneWithText('fixture-host').first();
+  await expect(pane.getByText('Verbunden')).toBeVisible({ timeout: 15_000 });
+  await expect(status).toHaveCount(0);
+  await pane.getByRole('button', { name: 'Bereich schließen' }).click();
+  await page.getByRole('button', { name: 'Beenden' }).click();
 });

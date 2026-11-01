@@ -1,11 +1,14 @@
-import { type KeyboardEvent } from 'react';
-import { Plus, Server, SquareTerminal, X } from 'lucide-react';
-import type { SessionTarget } from '@shared/contracts';
+import { useEffect, useState, type KeyboardEvent } from 'react';
+import { Container, Plus, Server, SquareTerminal, X } from 'lucide-react';
+import { Channels } from '@shared/channels';
+import type { SessionTarget, WslDistro } from '@shared/contracts';
+import { api } from '../../lib/api';
 import { collectPanes } from '../../lib/layoutTree';
 import { useApp } from '../../state/appStore';
 import { useWorkspace, type WorkspaceTab } from '../../state/workspaceStore';
 import { Button, cx, EmptyState, IconButton, Modal } from '../../components/ui/primitives';
 import { ServerStackIcon } from '../../components/ui/icons';
+import { BroadcastToggle } from '../broadcast/BroadcastPanel';
 import { SplitView } from './SplitView';
 import { usePaneLabel } from './TerminalPane';
 
@@ -50,6 +53,8 @@ function SessionTabView({ tab }: { tab: WorkspaceTab }) {
         <span className={cx('flex-none', failed && 'text-error')}>
           {first.target.kind === 'ssh' ? (
             <ServerStackIcon size={15} muted={failed} />
+          ) : first.target.kind === 'docker' ? (
+            <Container size={15} className={failed ? 'text-error' : 'text-cyan'} />
           ) : (
             <SquareTerminal size={15} className={failed ? 'text-error' : 'text-cyan'} />
           )}
@@ -76,6 +81,14 @@ function SessionChooser() {
   const hosts = useApp((state) => state.hosts);
   const shells = useApp((state) => state.shells);
   const openEditor = useApp((state) => state.openEditor);
+  const open = chooser !== null;
+  const [distros, setDistros] = useState<WslDistro[]>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    // Only reads what WSL knows. A distribution that is not running stays that way until someone picks it.
+    void api.invoke(Channels.wslStatus).then((status) => setDistros(status.distros)).catch(() => setDistros([]));
+  }, [open]);
 
   const choose = (target: SessionTarget) => {
     if (chooser?.split) {
@@ -100,6 +113,14 @@ function SessionChooser() {
           <button key={shell.id} type="button" className={row} onClick={() => choose({ kind: 'local', shellId: shell.id })}>
             <SquareTerminal size={16} className="text-cyan" />
             {shell.label}
+          </button>
+        ))}
+        {distros.length > 0 && <div className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">WSL</div>}
+        {distros.map((distro) => (
+          <button key={distro.name} type="button" className={row} onClick={() => choose({ kind: 'wsl', distro: distro.name })}>
+            <SquareTerminal size={16} className="text-cyan" />
+            <span className="min-w-0 flex-1 truncate">{distro.name}</span>
+            <span className="flex-none text-[11px] text-secondary">{distro.running ? 'Läuft' : 'Startet beim Öffnen'}</span>
           </button>
         ))}
         <div className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">SSH</div>
@@ -164,6 +185,7 @@ export function Workspace() {
         <IconButton label="Neue Sitzung" size={26} onClick={() => setChooser({ split: null })}>
           <Plus size={15} />
         </IconButton>
+        <BroadcastToggle />
       </div>
       <div className="relative min-h-0 flex-1">
         {tabs.length === 0 && <WorkspaceEmpty />}

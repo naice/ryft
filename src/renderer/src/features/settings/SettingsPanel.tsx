@@ -1,18 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2 } from 'lucide-react';
 import { Channels } from '@shared/channels';
 import { ANSI_COLOR_KEYS, DEFAULT_PREFERENCES, type AnsiColorKey, type KnownHostEntry, type Preferences } from '@shared/contracts';
 import { api } from '../../lib/api';
 import { attempt, useApp } from '../../state/appStore';
 import { Button, Checkbox, cx, Field, IconButton, Input, Modal, Select } from '../../components/ui/primitives';
 import { buildTerminalTheme } from '../terminal/terminalTheme';
+import { AuthProfilesSection } from './AuthProfilesSection';
+import { AiSection, LoggingSection, WslSection } from './DeveloperSections';
+import { HistorySection } from './HistorySection';
 
-type Section = 'appearance' | 'terminal' | 'connections' | 'security' | 'about';
+type Section = 'appearance' | 'terminal' | 'connections' | 'profiles' | 'history' | 'logging' | 'wsl' | 'ai' | 'security' | 'about';
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'appearance', label: 'Darstellung' },
   { id: 'terminal', label: 'Terminal' },
   { id: 'connections', label: 'Verbindungen' },
+  { id: 'profiles', label: 'Anmeldeprofile' },
+  { id: 'history', label: 'Befehlsverlauf' },
+  { id: 'logging', label: 'Protokolle' },
+  { id: 'wsl', label: 'WSL' },
+  { id: 'ai', label: 'KI-Assistent' },
   { id: 'security', label: 'Sicherheit' },
   { id: 'about', label: 'Über RYFT' }
 ];
@@ -123,6 +131,53 @@ function AnsiEditor({ preferences, update }: { preferences: Preferences; update(
   );
 }
 
+function VaultStatus() {
+  const vault = useApp((state) => state.vault);
+  const askConfirm = useApp((state) => state.askConfirm);
+  const refreshVault = useApp((state) => state.refreshVault);
+  const toast = useApp((state) => state.toast);
+  return (
+    <Group title="Schlüsselbund">
+      <p className="text-xs text-secondary">
+        {vault.available
+          ? `Secrets werden über den Schlüsselbund des Betriebssystems verschlüsselt (${vault.backend}).`
+          : 'Auf diesem System ist kein Schlüsselbund verfügbar. RYFT speichert deshalb keine Secrets und fragt bei jeder Verbindung.'}
+      </p>
+      {vault.keyLost && (
+        <div role="alert" className="flex flex-col gap-2 rounded-control border border-warning p-2.5 text-xs text-text">
+          <p className="flex items-start gap-2">
+            <AlertTriangle size={15} className="mt-px flex-none text-warning" />
+            Gespeicherte Secrets lassen sich mit dem aktuellen Schlüssel des Betriebssystems nicht mehr entschlüsseln. RYFT fragt
+            betroffene Zugangsdaten beim Verbinden erneut ab. Die verschlüsselten Daten bleiben erhalten, falls der alte Schlüssel
+            wieder verfügbar wird.
+          </p>
+          <div>
+            <Button
+              variant="danger"
+              onClick={() =>
+                askConfirm({
+                  title: 'Unlesbare Secrets verwerfen?',
+                  message: 'Die verschlüsselten Daten werden endgültig gelöscht. Hosts und Anmeldeprofile bleiben bestehen.',
+                  confirmLabel: 'Verwerfen',
+                  danger: true,
+                  onConfirm: () =>
+                    void attempt(async () => {
+                      const count = await api.invoke(Channels.secretsDiscardUnreadable);
+                      await refreshVault();
+                      toast('success', `${count} unlesbare Secrets verworfen`);
+                    })
+                })
+              }
+            >
+              Unlesbare Secrets verwerfen
+            </Button>
+          </div>
+        </div>
+      )}
+    </Group>
+  );
+}
+
 function KnownHosts() {
   const [entries, setEntries] = useState<KnownHostEntry[]>([]);
   const askConfirm = useApp((state) => state.askConfirm);
@@ -179,7 +234,6 @@ export function SettingsPanel() {
   const preferences = useApp((state) => state.preferences);
   const setPreferences = useApp((state) => state.setPreferences);
   const shells = useApp((state) => state.shells);
-  const vault = useApp((state) => state.vault);
   const info = useApp((state) => state.info);
   const [section, setSection] = useState<Section>('appearance');
 
@@ -331,32 +385,41 @@ export function SettingsPanel() {
                   update(restoreLayout ? { restoreLayout } : { restoreLayout, workspaceLayout: null })
                 }
               />
+              <Checkbox
+                label="Startbefehle von Workspaces ausführen"
+                hint="Gilt nur für Workspaces, deren Befehle du im Editor freigegeben hast, und nur beim Öffnen des Workspaces."
+                checked={preferences.workspaceStartupCommands}
+                onChange={(workspaceStartupCommands) => update({ workspaceStartupCommands })}
+              />
             </Group>
           )}
 
+          {section === 'profiles' && <AuthProfilesSection />}
+
+          {section === 'history' && <HistorySection preferences={preferences} update={update} />}
+
+          {section === 'logging' && <LoggingSection preferences={preferences} update={update} />}
+
+          {section === 'wsl' && <WslSection preferences={preferences} update={update} />}
+
+          {section === 'ai' && <AiSection preferences={preferences} update={update} />}
+
           {section === 'security' && (
             <>
-              <Group title="Schlüsselbund">
-                <p className="text-xs text-secondary">
-                  {vault.available
-                    ? `Secrets werden über den Schlüsselbund des Betriebssystems verschlüsselt (${vault.backend}).`
-                    : 'Auf diesem System ist kein Schlüsselbund verfügbar. RYFT speichert deshalb keine Secrets und fragt bei jeder Verbindung.'}
-                </p>
-              </Group>
+              <VaultStatus />
               <KnownHosts />
             </>
           )}
 
           {section === 'about' && (
             <Group title="RYFT">
-              <p className="text-xs text-secondary">
-                Version {info?.version}. SFTP und Port Forwarding sind noch nicht enthalten.
-              </p>
+              <p className="text-xs text-secondary">Version {info?.version}. Alle Daten bleiben auf diesem Rechner.</p>
               <div>
                 <Button
                   onClick={() => {
                     // Layout state is not a setting, so resetting must not close anyone's tabs.
-                    const { workspaceLayout: _layout, hostPanelWidth: _width, collapsedGroups: _collapsed, ...defaults } =
+                    // Exclusions keep secrets out of the history, so they do not silently disappear either.
+                    const { workspaceLayout: _layout, hostPanelWidth: _width, collapsedGroups: _collapsed, historyExclusions: _rules, ...defaults } =
                       DEFAULT_PREFERENCES;
                     update(defaults);
                   }}
