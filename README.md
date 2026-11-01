@@ -62,7 +62,7 @@ Die Bedienung erklärt das [Benutzerhandbuch](docs/USER_GUIDE.md).
 
 **Entwicklerwerkzeuge**
 
-- Lokale Terminals mit erkannten Shells und WSL-Distributionen
+- Lokale Terminals mit erkannten Shells und, wenn welche installiert sind, WSL-Distributionen
 - Docker: Container verwalten, Logs live verfolgen und Shells öffnen, lokal oder in WSL
 - KI-Assistent mit lokalem Ollama, ab Werk aus; Vorschläge laufen nie ohne deine Bestätigung
 

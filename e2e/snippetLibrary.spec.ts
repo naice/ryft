@@ -21,7 +21,8 @@ const row = (presetId: string): Locator => page.locator(`[data-testid="preset-ro
 function terminalText(): Promise<string> {
   return page.evaluate(() => {
     const lines = document.querySelectorAll('[data-active="true"] .xterm-rows > div');
-    return [...lines].map((line) => line.textContent ?? '').join('\n');
+    // Joined without a separator, because a long prompt wraps a marker across two rows.
+    return [...lines].map((line) => line.textContent ?? '').join('');
   });
 }
 

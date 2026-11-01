@@ -109,7 +109,8 @@ function SessionChooser() {
     >
       <div className="flex max-h-[420px] flex-col gap-0.5 overflow-y-auto px-3 pb-3">
         <div className="px-2.5 py-1 text-[11px] font-medium text-subtle">Lokal</div>
-        {shells.map((shell) => (
+        {/* wsl.exe exists on Windows even without WSL, and every real distribution has its own row below. */}
+        {shells.filter((shell) => shell.id !== 'wsl').map((shell) => (
           <button key={shell.id} type="button" className={row} onClick={() => choose({ kind: 'local', shellId: shell.id })}>
             <SquareTerminal size={16} className="text-cyan" />
             {shell.label}

@@ -122,6 +122,10 @@
 - The snippet dialog names the risk of the expanded command, which can be higher than the template's. **Einfügen** is the primary action.
 - Running a dangerous command, or a modifying command on several sessions, requires ticking an acknowledgement in the confirmation.
 
+### Fixed
+
+- The session chooser no longer offers a WSL entry on Windows machines without a distribution. `wsl.exe` exists there too.
+
 ### Security
 
 - Parameter values are quoted per shell and for the quotes around their placeholder. Values a shell cannot safely receive are refused:

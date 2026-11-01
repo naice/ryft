@@ -18,7 +18,8 @@ async function openLocalTerminal(): Promise<void> {
 function terminalText(): Promise<string> {
   return page.evaluate(() => {
     const rows = document.querySelectorAll('[data-active="true"] .xterm-rows > div');
-    return [...rows].map((row) => row.textContent ?? '').join('\n');
+    // Joined without a separator, because a long prompt wraps a marker across two rows.
+    return [...rows].map((row) => row.textContent ?? '').join('');
   });
 }
 
