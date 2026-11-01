@@ -58,7 +58,7 @@ function regenerateScreenshots() {
   console.log('Screenshots werden neu erzeugt ...');
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  const result = spawnSync('npm', ['run', 'screenshots'], { stdio: 'inherit', env, shell: process.platform === 'win32' });
+  const result = spawnSync('npm run screenshots', { stdio: 'inherit', env, shell: true });
   return result.status === 0;
 }
 
@@ -82,12 +82,19 @@ function prePush() {
   if (!checkReadme()) return 1;
   if (stale.size === 0) return 0;
 
-  console.error('\nPush angehalten: Die Dokumentation passt nicht zu den Änderungen an der App.');
+  const messages = [];
   if (stale.has('screenshots')) {
-    if (regenerateScreenshots()) console.error('- Screenshots wurden neu erzeugt. Bitte prüfen und committen.');
-    else console.error('- Screenshots konnten nicht erzeugt werden, die Ausgabe steht oben.');
+    // A change that leaves the UI as it was produces identical images, and those cannot be committed.
+    if (!regenerateScreenshots()) messages.push('- Screenshots konnten nicht erzeugt werden, die Ausgabe steht oben.');
+    else if (git('status', '--porcelain', '--', SCREENSHOTS)) {
+      messages.push('- Screenshots wurden neu erzeugt. Bitte prüfen und committen.');
+    }
   }
-  if (stale.has('readme')) console.error('- README.md: Funktionen und Screenshots beschreiben und committen.');
+  if (stale.has('readme')) messages.push('- README.md: Funktionen und Screenshots beschreiben und committen.');
+  if (messages.length === 0) return 0;
+
+  console.error('\nPush angehalten: Die Dokumentation passt nicht zu den Änderungen an der App.');
+  for (const message of messages) console.error(message);
   console.error('Danach erneut pushen.\n');
   return 1;
 }

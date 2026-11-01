@@ -27,6 +27,7 @@ jobs:
         run: echo "version=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')").${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
   package:
+    name: package-${{ matrix.name }}
     needs: [verify, version]
     strategy:
       fail-fast: false

@@ -34,11 +34,12 @@ export async function launchApp(
   env.HOME = profile;
   env.USERPROFILE = profile;
 
-  const userData = `--user-data-dir=${join(profile, 'userData')}`;
+  // The throwaway HOME has no macOS keychain, and the dialog asking for one would block the main process.
+  const flags = [`--user-data-dir=${join(profile, 'userData')}`, '--use-mock-keychain'];
   const app = await _electron.launch(
     options.executablePath
-      ? { executablePath: options.executablePath, args: [userData], env }
-      : { args: [resolve(__dirname, '..'), userData], env }
+      ? { executablePath: options.executablePath, args: flags, env }
+      : { args: [resolve(__dirname, '..'), ...flags], env }
   );
   const page = await app.firstWindow();
   await page.waitForSelector('[data-testid="app-shell"]');

@@ -14,7 +14,7 @@ npm run dev
 Die README beschreibt immer den Stand, der gepusht wird. Der Hook `scripts/check-docs.mjs` setzt das durch:
 
 1. Ändert ein Push `src/`, `resources/` oder `package.json`, muss er auch `README.md` und `docs/screenshots/` ändern, und zwar im selben oder einem neueren Commit.
-2. Fehlen die Screenshots, erzeugt der Hook sie mit `npm run screenshots` neu und bricht den Push ab, damit du sie prüfen und committen kannst.
+2. Fehlen die Screenshots, erzeugt der Hook sie mit `npm run screenshots` neu. Sind neue Bilder entstanden, bricht er den Push ab, damit du sie prüfen und committen kannst. Bleiben sie unverändert, sind sie aktuell.
 3. Bilder, auf die die README verweist, müssen existieren.
 
 Der Ablauf bei einer Änderung an der App:
