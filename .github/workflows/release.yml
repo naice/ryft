@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Releases must appear in push order, so a newer push waits instead of cancelling.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      # package.json sets major and minor. The run number keeps every push unique and survives re-runs.
+      - id: version
+        run: echo "version=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')").${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  package:
+    needs: [verify, version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows
+            files: |
+              release/*.exe
+          - os: macos-latest
+            name: macos
+            files: |
+              release/*.dmg
+          - os: ubuntu-latest
+            name: linux
+            files: |
+              release/*.AppImage
+              release/*.deb
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      # Builds are unsigned on purpose: there is no certificate yet.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version
+      - run: npm run package -- --publish never
+      # Native modules and asar paths only break in the packaged app, so each platform starts its own build.
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Ubuntu blocks the user namespaces that the Chromium sandbox needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a npx playwright test --project=packaged
+      - name: Smoke test
+        if: runner.os != 'Linux'
+        run: npx playwright test --project=packaged
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results-${{ matrix.name }}
+          path: test-results/
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+
+  publish:
+    needs: [version, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        run: |
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "RYFT $TAG" \
+              --notes-file .github/release-notes.md --generate-notes
+          fi
+          gh release upload "$TAG" artifacts/* --clobber

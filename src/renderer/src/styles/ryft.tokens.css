@@ -1,0 +1,16 @@
+:root, [data-theme="ryft-dark"] {
+  color-scheme: dark;
+  --ryft-canvas:#080F1A; --ryft-terminal:#030911;
+  --ryft-nav:#081321; --ryft-host-panel:#101B2C;
+  --ryft-card:#111F31; --ryft-raised:#17253A;
+  --ryft-border:#1F344B; --ryft-border-hover:#33506C;
+  --ryft-border-active:#00D6F5; --ryft-text:#F2F6FF;
+  --ryft-text-secondary:#A2B0C6; --ryft-text-subtle:#74859D;
+  --ryft-cyan:#00E5FF; --ryft-purple:#9B5CFF;
+  --ryft-pink:#FF4C9A; --ryft-success:#10D6A0;
+  --ryft-warning:#FFB020; --ryft-error:#FF5263;
+  --ryft-radius-control:6px; --ryft-radius-card:8px;
+  --ryft-radius-panel:10px;
+  --ryft-font-ui:Inter,system-ui,sans-serif;
+  --ryft-font-terminal:'JetBrains Mono',Consolas,monospace;
+}

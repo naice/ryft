@@ -1,0 +1,194 @@
+@import 'tailwindcss';
+@import './ryft.tokens.css';
+@import './themes.css';
+@import '@xterm/xterm/css/xterm.css';
+
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+@theme inline {
+  --color-canvas: var(--ryft-canvas);
+  --color-terminal: var(--ryft-terminal);
+  --color-nav: var(--ryft-nav);
+  --color-host-panel: var(--ryft-host-panel);
+  --color-card: var(--ryft-card);
+  --color-raised: var(--ryft-raised);
+  --color-border: var(--ryft-border);
+  --color-border-hover: var(--ryft-border-hover);
+  --color-border-active: var(--ryft-border-active);
+  --color-text: var(--ryft-text);
+  --color-secondary: var(--ryft-text-secondary);
+  --color-subtle: var(--ryft-text-subtle);
+  --color-cyan: var(--ryft-cyan);
+  --color-purple: var(--ryft-purple);
+  --color-pink: var(--ryft-pink);
+  --color-success: var(--ryft-success);
+  --color-warning: var(--ryft-warning);
+  --color-error: var(--ryft-error);
+  --color-selected: var(--ryft-selected);
+  --color-selected-strong: var(--ryft-selected-strong);
+  --color-hover: var(--ryft-hover);
+  --color-tabbar: var(--ryft-tabbar);
+  --color-tab-active: var(--ryft-tab-active);
+  --color-tab-idle: var(--ryft-tab-idle);
+  --color-segment-active: var(--ryft-segment-active);
+  --color-pane-header: var(--ryft-pane-header);
+  --color-pane-border-local: var(--ryft-pane-border-local);
+  --color-pane-border-remote: var(--ryft-pane-border-remote);
+  --color-pane-remote-tint: var(--ryft-pane-remote-tint);
+  --color-on-cyan: var(--ryft-on-cyan);
+  --color-overlay: var(--ryft-overlay);
+  --radius-control: var(--ryft-radius-control);
+  --radius-card: var(--ryft-radius-card);
+  --radius-panel: var(--ryft-radius-panel);
+  --font-ui: var(--ryft-font-ui);
+  --font-terminal: var(--ryft-font-terminal);
+  --shadow-glow: var(--ryft-glow);
+  --shadow-float: var(--ryft-shadow);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--ryft-canvas);
+  color: var(--ryft-text);
+  font-family: var(--ryft-font-ui);
+  font-size: 13px;
+  line-height: 18px;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ryft-focus);
+  outline-offset: 1px;
+}
+
+/* Sits inside a field that shows focus itself, or a ring would be drawn around just the text. */
+.ryft-bare-input:focus-visible {
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ryft-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ryft-border-hover);
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.ryft-drag {
+  -webkit-app-region: drag;
+}
+.ryft-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* The terminal owns its padding so that fit calculations match what is visible. */
+.ryft-terminal-host {
+  position: absolute;
+  inset: 12px;
+}
+.ryft-terminal-host .xterm {
+  height: 100%;
+}
+.ryft-terminal-host .xterm-viewport {
+  background: transparent !important;
+}
+
+.ryft-nav-selected {
+  background: var(--ryft-nav-selected);
+}
+
+.ryft-gutter {
+  flex: none;
+  position: relative;
+  touch-action: none;
+}
+.ryft-gutter::after {
+  content: '';
+  position: absolute;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 120ms;
+}
+.ryft-gutter-row {
+  width: 6px;
+  cursor: col-resize;
+}
+.ryft-gutter-row::after {
+  inset: 0 2px;
+}
+.ryft-gutter-column {
+  height: 6px;
+  cursor: row-resize;
+}
+.ryft-gutter-column::after {
+  inset: 2px 0;
+}
+.ryft-gutter:hover::after,
+.ryft-gutter:focus-visible::after,
+.ryft-gutter[data-dragging='true']::after {
+  background: var(--ryft-border-active);
+}
+
+@keyframes ryft-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ryft-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@keyframes ryft-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ryft-anim-overlay {
+  animation: ryft-fade-in 160ms ease-out;
+}
+.ryft-anim-pop {
+  animation: ryft-pop-in 160ms ease-out;
+}
+.ryft-spin {
+  animation: ryft-spin 900ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

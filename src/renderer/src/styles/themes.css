@@ -1,0 +1,98 @@
+/*
+ * ryft.tokens.css is the design kit's starting point. The binding reference image is darker and has
+ * softer hairlines, so ryft-dark overrides the kit's surfaces with values measured from that image.
+ * These additions also complete the surfaces the UI spec names, and define the two other themes.
+ */
+:root,
+[data-theme='ryft-dark'] {
+  --ryft-canvas: #060e18;
+  --ryft-nav: #040f18;
+  --ryft-host-panel: #0c1421;
+  --ryft-card: #101a25;
+  --ryft-raised: #121b29;
+  --ryft-border: #1a2835;
+  --ryft-border-hover: #2b3f55;
+  --ryft-selected: rgba(66, 84, 214, 0.28);
+  --ryft-selected-strong: rgba(84, 92, 232, 0.36);
+  --ryft-nav-selected: linear-gradient(90deg, #10284f, #1d1d46);
+  --ryft-hover: rgba(148, 178, 214, 0.08);
+  --ryft-tabbar: #071019;
+  --ryft-tab-active: #0f2032;
+  --ryft-tab-idle: #0d141f;
+  --ryft-segment-active: #1a2740;
+  --ryft-pane-header: #0d1520;
+  --ryft-pane-border-local: #113e52;
+  --ryft-pane-border-remote: #352a53;
+  --ryft-pane-remote-tint: rgba(120, 40, 220, 0.06);
+  --ryft-overlay: rgba(2, 6, 12, 0.66);
+  --ryft-on-cyan: #04121c;
+  --ryft-glow: 0 0 12px rgba(0, 229, 255, 0.12);
+  --ryft-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --ryft-focus: #00e5ff;
+}
+
+[data-theme='ryft-midnight'] {
+  color-scheme: dark;
+  --ryft-canvas: #04070d;
+  --ryft-terminal: #010308;
+  --ryft-nav: #050a12;
+  --ryft-host-panel: #0a111c;
+  --ryft-card: #0d1623;
+  --ryft-raised: #121e2f;
+  --ryft-border: #18283a;
+  --ryft-border-hover: #2a4259;
+  --ryft-tabbar: #03060b;
+  --ryft-tab-active: #0c1a2a;
+  --ryft-tab-idle: #070c14;
+  --ryft-segment-active: #16223a;
+  --ryft-pane-header: #050a12;
+}
+
+[data-theme='ryft-light'] {
+  color-scheme: light;
+  --ryft-canvas: #e8edf4;
+  --ryft-terminal: #fbfcfe;
+  --ryft-nav: #f4f7fb;
+  --ryft-host-panel: #f9fbfd;
+  --ryft-card: #ffffff;
+  --ryft-raised: #eef2f8;
+  --ryft-border: #cdd7e4;
+  --ryft-border-hover: #a4b4c8;
+  --ryft-border-active: #0086a8;
+  --ryft-text: #101b2c;
+  --ryft-text-secondary: #43536a;
+  --ryft-text-subtle: #5f7087;
+  --ryft-cyan: #007c9c;
+  --ryft-purple: #6d35d6;
+  --ryft-pink: #c21f6b;
+  --ryft-success: #047a5a;
+  --ryft-warning: #955c00;
+  --ryft-error: #c5213a;
+  --ryft-selected: rgba(66, 84, 214, 0.13);
+  --ryft-selected-strong: rgba(66, 84, 214, 0.2);
+  --ryft-nav-selected: linear-gradient(90deg, rgba(0, 124, 156, 0.16), rgba(109, 53, 214, 0.16));
+  --ryft-hover: rgba(40, 62, 92, 0.07);
+  --ryft-tabbar: #e0e6ef;
+  --ryft-tab-active: #ffffff;
+  --ryft-tab-idle: #eef2f8;
+  --ryft-segment-active: #ffffff;
+  --ryft-pane-header: #f0f4f9;
+  --ryft-pane-border-local: #9cc4d2;
+  --ryft-pane-border-remote: #c0b0e4;
+  --ryft-pane-remote-tint: rgba(109, 53, 214, 0.035);
+  --ryft-overlay: rgba(30, 42, 60, 0.4);
+  --ryft-on-cyan: #ffffff;
+  --ryft-glow: 0 0 10px rgba(0, 124, 156, 0.14);
+  --ryft-shadow: 0 16px 36px rgba(30, 42, 60, 0.2);
+  --ryft-focus: #007c9c;
+}
+
+/* High contrast raises text and hairlines to full strength on any theme. */
+[data-contrast='high'] {
+  --ryft-text-secondary: var(--ryft-text);
+  --ryft-text-subtle: var(--ryft-text);
+  --ryft-border: var(--ryft-text-secondary);
+  --ryft-border-hover: var(--ryft-text);
+  --ryft-pane-border-local: var(--ryft-text-secondary);
+  --ryft-pane-border-remote: var(--ryft-text-secondary);
+}
