@@ -13,7 +13,7 @@
     "url": "https://github.com/naice/ryft.git"
   },
   "scripts": {
-    "prepare": "node scripts/setup-hooks.mjs",
+    "prepare": "node scripts/prepare.mjs",
     "check:docs": "node scripts/check-docs.mjs",
     "dev": "electron-vite dev",
     "build": "electron-vite build",

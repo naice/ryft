@@ -144,6 +144,8 @@ Schwachstellen meldest du wie in [SECURITY.md](SECURITY.md) beschrieben.
 
 **„Kein SSH-Agent gefunden":** RYFT nutzt `SSH_AUTH_SOCK`, auf Windows sonst die Pipe von OpenSSH oder Pageant. Der Windows-Dienst `ssh-agent` ist ab Werk oft deaktiviert und muss erst aktiviert und gestartet werden.
 
+**Gespeichertes Passwort wird nach dem Neustart erneut abgefragt:** Das kam in automatischen Tests selten vor, wenn die allererste Sitzung eines Profils nach wenigen Sekunden beendet wurde. Die Ursache ist noch nicht geklärt. Es geht dabei nichts verloren außer der gespeicherten Eingabe: Gib das Passwort erneut ein und speichere es wieder.
+
 **Terminal bleibt leer oder flackert:** Stelle unter Einstellungen → Terminal den Renderer von WebGL auf DOM um.
 
 **`AttachConsole failed` in der Testausgabe:** Diese Meldung stammt von einem Hilfsprozess von node-pty unter Windows, wenn eine Test-Shell beendet wird. Sie beeinflusst das Testergebnis nicht.

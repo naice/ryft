@@ -10,8 +10,13 @@ export interface FixtureOptions {
 }
 
 export function generateOpenSshKey(passphrase?: string): { privateKey: string; publicKey: string } {
-  const pair = utils.generateKeyPairSync('ed25519', passphrase ? { passphrase, cipher: 'aes256-ctr', rounds: 4 } : {});
-  return { privateKey: pair.private, publicKey: pair.public };
+  // About 3 in 1000 keys from ssh2's generator cannot be parsed again, which made tests fail at random.
+  for (;;) {
+    const pair = utils.generateKeyPairSync('ed25519', passphrase ? { passphrase, cipher: 'aes256-ctr', rounds: 4 } : {});
+    if (!(utils.parseKey(pair.private, passphrase) instanceof Error)) {
+      return { privateKey: pair.private, publicKey: pair.public };
+    }
+  }
 }
 
 /** A pure in-process SSH server on 127.0.0.1 with real handshakes, used instead of any live host. */
