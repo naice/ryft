@@ -16,6 +16,8 @@
 
 ![RYFT-Arbeitsbereich mit Hostliste, Tabs und geteilten Terminal-Bereichen](docs/screenshots/workspace-1440x900.png)
 
+<p align="center"><em>Hostliste nach Gruppen, Tabs und frei teilbare Bereiche: oben eine SSH-Sitzung, unten eine lokale PowerShell und ein zweiter Server nebeneinander.</em></p>
+
 ## Inhalt
 
 - [Funktionen](#funktionen)
@@ -27,7 +29,8 @@
 - [Fehlerbehebung](#fehlerbehebung)
 - [Plattformen](#plattformen)
 - [Aufbau](#aufbau)
-- [Mitarbeit und Lizenz](#mitarbeit-und-lizenz)
+- [Mitarbeit](#mitarbeit)
+- [Lizenz](#lizenz)
 
 ## Funktionen
 
@@ -68,26 +71,105 @@ Die Bedienung erklärt das [Benutzerhandbuch](docs/USER_GUIDE.md).
 
 ## Screenshots
 
-| | |
-| --- | --- |
-| ![Host-Editor mit Anmeldung per Schlüsseldatei](docs/screenshots/host-editor.png) | ![Befehlspalette](docs/screenshots/command-palette.png) |
-| **Host-Editor** | **Befehlspalette** |
-| ![Terminal-Einstellungen](docs/screenshots/settings.png) | ![Fehlermeldung nach einem abgelehnten Verbindungsversuch](docs/screenshots/connection-error.png) |
-| **Einstellungen** | **Verbindungsfehler** |
-| ![Leerer Zustand ohne Hosts](docs/screenshots/empty-state.png) | ![Schmales Fenster mit eingeklappter Navigation](docs/screenshots/workspace-1000x680-rail.png) |
-| **Erster Start** | **Schmales Fenster** |
-| ![SFTP mit zwei Dateibereichen](docs/screenshots/sftp.png) | ![Port-Forwarding-Profile und aktive Tunnel](docs/screenshots/port-forwarding.png) |
-| **SFTP** | **Port Forwarding** |
-| ![Gespeicherte Workspaces](docs/screenshots/workspaces.png) | ![Snippets mit Parametern](docs/screenshots/snippets.png) |
-| **Workspaces** | **Snippets** |
-| ![Verwaltete SSH-Schlüssel mit Fingerprint](docs/screenshots/ssh-keys.png) | ![Docker-Container mit Live-Logs](docs/screenshots/docker.png) |
-| **SSH Keys** | **Docker** |
-| ![KI-Assistent mit Antwort und Befehlsvorschlag](docs/screenshots/ai-assistant.png) | ![Broadcast mit Warnleiste und markierten Zielen](docs/screenshots/broadcast.png) |
-| **KI-Assistent** | **Broadcast** |
-| ![Snippet-Bibliothek mit Kategorien, Befehlsvorschau und Eignung](docs/screenshots/snippet-library.png) | |
-| **Snippet-Bibliothek** | |
-| ![Liste der Sitzungsprotokolle](docs/screenshots/session-logs.png) | |
-| **Sitzungsprotokolle** | |
+Ein Rundgang durch die App, von der Hostliste bis zu den Entwicklerwerkzeugen.
+
+### Erster Start
+
+![Leerer Zustand ohne Hosts](docs/screenshots/empty-state.png)
+
+Ohne Hosts lässt RYFT dich nicht vor einer leeren Fläche stehen. Du legst links deinen ersten SSH-Host an oder öffnest rechts direkt ein lokales Terminal. Schon hier steht, wohin Geheimnisse wandern: ausschließlich in den Schlüsselbund des Betriebssystems.
+
+### Host anlegen
+
+![Host-Editor mit Anmeldung per Schlüsseldatei](docs/screenshots/host-editor.png)
+
+Im Host-Editor trägst du Adresse, Benutzer und Anmeldeart ein und sortierst den Host in eine Gruppe, mit Tags und auf Wunsch als Favorit. Bei einer Schlüsseldatei speichert RYFT nur den Pfad, nie den Schlüssel selbst. Proxy, Keepalive, Sprunghosts und Umgebungsvariablen liegen unter „Erweitert".
+
+### Befehlspalette
+
+![Befehlspalette](docs/screenshots/command-palette.png)
+
+Mit Ctrl+K erreichst du alles über die Tastatur: Hosts samt Benutzer und Adresse, neue Hosts und jede erkannte lokale Shell, von PowerShell über Git Bash bis WSL.
+
+### Verbindungsfehler
+
+![Fehlermeldung nach einem abgelehnten Verbindungsversuch](docs/screenshots/connection-error.png)
+
+Scheitert eine Verbindung, sagt RYFT direkt im betroffenen Bereich, was passiert ist, und schlägt eine Ursache vor. Mit einem Klick verbindest du erneut, die anderen Bereiche laufen ungestört weiter.
+
+### SFTP
+
+![SFTP mit zwei Dateibereichen](docs/screenshots/sftp.png)
+
+Links liegt dein Rechner, rechts der Server. Dateien verschiebst du per Drag and Drop oder mit den Pfeilen in der Mitte. Unten sammelt die Warteschlange alle Übertragungen mit Fortschritt, und du kannst sie abbrechen oder wiederholen.
+
+### Port Forwarding
+
+![Port-Forwarding-Profile und aktive Tunnel](docs/screenshots/port-forwarding.png)
+
+Tunnel speicherst du als Profile: lokal (-L), remote (-R) oder als SOCKS-Proxy (-D). Jedes Profil startest und stoppst du mit einem Klick, und die Zahl in der Navigation zeigt, wie viele gerade aktiv sind.
+
+### Workspaces
+
+![Gespeicherte Workspaces](docs/screenshots/workspaces.png)
+
+Ein Workspace merkt sich Tabs, geteilte Bereiche und die verbundenen Hosts. So stellst du eine Arbeitsumgebung wie den „Release-Tag" mit einem Klick wieder her. Exportierte Workspaces enthalten keine Geheimnisse und lassen sich weitergeben.
+
+### Snippets
+
+![Snippets mit Parametern](docs/screenshots/snippets.png)
+
+Wiederkehrende Befehle legst du als Snippets ab. Platzhalter wie `{{lines:50}}` werden zu typisierten Parametern mit Vorgabewert, die du vor dem Ausführen ausfüllst. Riskante Befehle wie ein `sudo` markiert RYFT mit einem Warnzeichen.
+
+### Snippet-Bibliothek
+
+![Snippet-Bibliothek mit Kategorien, Befehlsvorschau und Eignung](docs/screenshots/snippet-library.png)
+
+Die mitgelieferte Bibliothek bringt 178 Befehle für Git, Docker, PowerShell, Netzwerk und mehr mit. RYFT prüft, welche Werkzeuge im aktuellen Terminal vorhanden sind, und blendet auf Wunsch nur passende Befehle ein. Rechts erklärt die Vorschau, was ein Befehl tut, was er braucht und wie gefährlich er ist.
+
+### Broadcast
+
+![Broadcast mit Warnleiste und markierten Zielen](docs/screenshots/broadcast.png)
+
+Mit Broadcast tippst du einen Befehl einmal und schickst ihn an mehrere Sitzungen. Solange er aktiv ist, steht oben eine nicht zu übersehende Leiste mit allen Zielen, und Ctrl+Shift+B schaltet ihn sofort ab.
+
+### SSH Keys
+
+![Verwaltete SSH-Schlüssel mit Fingerprint](docs/screenshots/ssh-keys.png)
+
+Hier erzeugst oder importierst du ED25519-Schlüssel und siehst ihren Fingerprint. Von hier aus weist du einen Schlüssel Hosts zu oder trägst ihn auf einem Server ein. Den privaten Schlüssel zeigt RYFT nie an.
+
+### Docker
+
+![Docker-Container mit Live-Logs](docs/screenshots/docker.png)
+
+Die Docker-Ansicht listet Container mit Image, Status und Ports. Du startest, stoppst und startest sie neu, öffnest eine Shell darin oder verfolgst unten die Logs live. Unverschlüsselte TCP-Kontexte zu anderen Rechnern erkennt RYFT und nutzt sie bewusst nicht.
+
+### KI-Assistent
+
+![KI-Assistent mit Antwort und Befehlsvorschlag](docs/screenshots/ai-assistant.png)
+
+Der Assistent spricht mit einem lokalen Ollama-Modell, deine Daten verlassen den Rechner also nicht. Du fragst in normaler Sprache und bekommst einen Befehl vorgeschlagen. Ausgeführt wird er erst, wenn du den genauen Wortlaut bestätigst.
+
+### Sitzungsprotokolle
+
+![Liste der Sitzungsprotokolle](docs/screenshots/session-logs.png)
+
+Wenn du die Aufzeichnung einschaltest, landen die Ausgaben einer Sitzung in einem durchsuchbaren Protokoll, das du exportieren kannst. Ein Hinweis erinnert daran, dass Protokolle unverschlüsselt sind und alles enthalten, was das Terminal anzeigt.
+
+### Einstellungen
+
+![Terminal-Einstellungen](docs/screenshots/settings.png)
+
+In den Einstellungen passt du Schrift, Cursor, Scrollback und die ANSI-Farben an. Falls die Grafik Probleme macht, schaltest du den Renderer von WebGL auf DOM um. Weitere Seiten regeln Verbindungen, Anmeldeprofile, Befehlsverlauf, WSL, KI-Assistent und Sicherheit.
+
+### Schmales Fenster
+
+![Schmales Fenster mit eingeklappter Navigation](docs/screenshots/workspace-1000x680-rail.png)
+
+In kleinen Fenstern klappt die Navigation zu einer Symbolleiste ein, damit Hostliste und Terminals genug Platz behalten.
+
+### Woher die Bilder stammen
 
 Die Bilder stammen aus der echten App und werden mit `npm run screenshots` erzeugt. Die Hostnamen sind Beispiele aus den Dokumentations-Adressbereichen. Der Verbindungsfehler entsteht durch einen echten abgelehnten Verbindungsversuch auf 127.0.0.1. Zwei Bilder nutzen Testdaten: Die Docker-Ansicht zeigt Demo-Container aus `e2e/dockerStub.ts`, der KI-Assistent spricht mit einem lokalen Testserver statt mit einem echten Modell.
 
@@ -220,8 +302,12 @@ Designwerte stehen als Tokens in `src/renderer/src/styles/themes.css`. Komponent
 
 Gebaut mit Electron, React, TypeScript, Tailwind, xterm.js, ssh2 und node-pty.
 
-## Mitarbeit und Lizenz
+## Mitarbeit
 
 Wie du mitarbeitest und warum vor jedem Push README und Screenshots aktuell sein müssen, steht in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Das Projekt steht unter der [MIT-Lizenz](LICENSE). „RYFT" ist ein Arbeitstitel und nicht markenrechtlich geprüft.
+## Lizenz
+
+RYFT steht unter der [MIT-Lizenz](LICENSE). Du darfst den Code frei nutzen, verändern und weitergeben, auch kommerziell, solange der Lizenz- und Copyright-Hinweis erhalten bleibt. Die Software kommt ohne jede Gewährleistung.
+
+„RYFT" ist ein Arbeitstitel und nicht markenrechtlich geprüft.
