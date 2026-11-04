@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Plattform-Windows%20%7C%20macOS%20%7C%20Linux-0b1420" alt="Plattformen: Windows, macOS, Linux" />
   <img src="https://img.shields.io/badge/Electron-45-0b1420?logo=electron" alt="Electron 45" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-0b1420?logo=typescript" alt="TypeScript 5.9" />
-  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-MIT-0b1420" alt="Lizenz: MIT" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-PolyForm%20Noncommercial-0b1420" alt="Lizenz: PolyForm Noncommercial 1.0.0" /></a>
 </p>
 
 ![RYFT-Arbeitsbereich mit Hostliste, Tabs und geteilten Terminal-Bereichen](docs/screenshots/workspace-1440x900.png)
@@ -308,6 +308,10 @@ Wie du mitarbeitest und warum vor jedem Push README und Screenshots aktuell sein
 
 ## Lizenz
 
-RYFT steht unter der [MIT-Lizenz](LICENSE). Du darfst den Code frei nutzen, verändern und weitergeben, auch kommerziell, solange der Lizenz- und Copyright-Hinweis erhalten bleibt. Die Software kommt ohne jede Gewährleistung.
+RYFT steht unter der [PolyForm Noncommercial License 1.0.0](LICENSE). Für nicht kommerzielle Zwecke darfst du den Code frei nutzen, verändern und weitergeben, etwa privat, zum Lernen, für Forschung oder in gemeinnützigen Organisationen. Der Lizenztext und der Copyright-Hinweis müssen dabei erhalten bleiben. Die Software kommt ohne jede Gewährleistung.
+
+Jede kommerzielle Nutzung braucht eine gesonderte schriftliche Erlaubnis des Rechteinhabers. Wer RYFT kommerziell einsetzen möchte, fragt über ein [Issue](https://github.com/naice/ryft/issues) an.
+
+RYFT ist damit quelloffen einsehbar, aber keine Open-Source-Software im Sinne der OSI.
 
 „RYFT" ist ein Arbeitstitel und nicht markenrechtlich geprüft.
