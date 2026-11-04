@@ -5,7 +5,7 @@
   "description": "RYFT - One Terminal. Every System. SSH session manager and local terminal.",
   "main": "out/main/index.js",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "RYFT",
   "homepage": "https://github.com/naice/ryft",
   "repository": {

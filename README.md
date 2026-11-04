@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/Plattform-Windows%20%7C%20macOS%20%7C%20Linux-0b1420" alt="Plattformen: Windows, macOS, Linux" />
   <img src="https://img.shields.io/badge/Electron-45-0b1420?logo=electron" alt="Electron 45" />
   <img src="https://img.shields.io/badge/TypeScript-5.9-0b1420?logo=typescript" alt="TypeScript 5.9" />
-  <img src="https://img.shields.io/badge/Lizenz-keine-0b1420" alt="Keine Lizenz" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-MIT-0b1420" alt="Lizenz: MIT" /></a>
 </p>
 
 ![RYFT-Arbeitsbereich mit Hostliste, Tabs und geteilten Terminal-Bereichen](docs/screenshots/workspace-1440x900.png)
@@ -224,4 +224,4 @@ Gebaut mit Electron, React, TypeScript, Tailwind, xterm.js, ssh2 und node-pty.
 
 Wie du mitarbeitest und warum vor jedem Push README und Screenshots aktuell sein müssen, steht in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Das Projekt hat keine Lizenz, alle Rechte bleiben vorbehalten. „RYFT" ist ein Arbeitstitel und nicht markenrechtlich geprüft.
+Das Projekt steht unter der [MIT-Lizenz](LICENSE). „RYFT" ist ein Arbeitstitel und nicht markenrechtlich geprüft.
